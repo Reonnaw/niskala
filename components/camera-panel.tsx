@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { SetupReport } from '@/lib/signals';
 import type { CameraView } from '@/lib/store';
 import { toast } from '@/lib/toast';
 import { IconCamera, IconCheck, IconInfo, IconLock, IconRefresh } from './icons';
@@ -9,10 +10,11 @@ import { Segmented } from './ui-client';
 
 export type Camera =
   | { state: 'off' | 'starting' }
-  | { state: 'on'; video: HTMLVideoElement }
+  | { state: 'on'; preview: HTMLElement }
   | { state: 'error'; error: string };
 
 const CALIBRATE_MS = 4000;
+const SETUP_MS = 3000;
 
 const PLACEMENT: Record<CameraView, { title: string; body: string; reads: string; misses?: string }> = {
   front: {
@@ -22,18 +24,19 @@ const PLACEMENT: Record<CameraView, { title: string; body: string; reads: string
   },
   side: {
     title: 'Kamera di samping',
-    body: 'Di kiri atau kanan, setinggi bahu, 1 sampai 2 meter dari kursi, sampai telinga, bahu, dan pinggul kelihatan.',
+    body: 'Di kiri atau kanan, setinggi bahu, 1 sampai 2 meter dari kursi, sampai telinga, bahu, dan pinggul kelihatan. Kalau pinggul ketutup meja, leher tetap dicek.',
     reads: 'Sudut leher dan punggung langsung, lebih akurat buat bungkuk ke depan.',
     misses: 'Miring ke samping dan kedipan nggak kebaca dari posisi ini.',
   },
 };
 
-export default function CameraPanel({ camera, onStart, onStop, calibrated, calibrate, previewElsewhere, view, onViewChange, cameras, cameraId, onCameraChange }: {
+export default function CameraPanel({ camera, onStart, onStop, calibrated, calibrate, checkSetup, previewElsewhere, view, onViewChange, cameras, cameraId, onCameraChange }: {
   camera: Camera;
   onStart: () => void;
   onStop: () => void;
   calibrated: boolean;
   calibrate: (ms: number) => Promise<boolean>;
+  checkSetup: (ms: number) => Promise<SetupReport | null>;
   /** True while the preview lives in the mini monitor window. */
   previewElsewhere: boolean;
   view: CameraView;
@@ -45,13 +48,22 @@ export default function CameraPanel({ camera, onStart, onStop, calibrated, calib
   const slot = useRef<HTMLDivElement>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [calError, setCalError] = useState('');
-  const video = camera.state === 'on' ? camera.video : null;
+  const [setup, setSetup] = useState<SetupReport | null>(null);
+  const [setupState, setSetupState] = useState<'idle' | 'busy' | 'missed'>('idle');
+  const preview = camera.state === 'on' ? camera.preview : null;
   const place = PLACEMENT[view];
 
   useEffect(() => {
-    if (!video || previewElsewhere || !slot.current) return;
-    slot.current.append(video);
-  }, [video, previewElsewhere]);
+    if (!preview || previewElsewhere || !slot.current) return;
+    slot.current.append(preview);
+  }, [preview, previewElsewhere]);
+
+  async function runSetup() {
+    setSetupState('busy');
+    const report = await checkSetup(SETUP_MS);
+    setSetup(report ?? setup);
+    setSetupState(report ? 'idle' : 'missed');
+  }
 
   async function runCalibration() {
     setCalError('');
@@ -66,7 +78,7 @@ export default function CameraPanel({ camera, onStart, onStop, calibrated, calib
       setCalError(
         view === 'front'
           ? 'Wajahmu kurang lama kelihatan. Hadap ke layar, cahayanya dari depan, terus coba lagi.'
-          : 'Telinga, bahu, dan pinggul kurang lama kelihatan. Mundurin kamera atau naikin dikit, terus coba lagi.',
+          : 'Telinga dan bahu kurang lama kelihatan. Mundurin kamera atau naikin dikit, terus coba lagi.',
       );
   }
 
@@ -135,31 +147,37 @@ export default function CameraPanel({ camera, onStart, onStop, calibrated, calib
         </div>
       ) : (
         <div className="space-y-4 border-t border-rule pt-5">
-          <div className="flex items-start gap-4">
-            <div
-              ref={slot}
-              className="grid aspect-[4/3] w-32 shrink-0 place-items-center overflow-hidden rounded-xl bg-surface text-center text-xs text-muted sm:w-36 [&>video]:h-full [&>video]:w-full [&>video]:-scale-x-100 [&>video]:object-cover"
-            >
-              {camera.state === 'starting' && <span className="px-2">Nyalain…</span>}
-              {previewElsewhere && <span className="px-2">Videonya ada di jendela kecil</span>}
-            </div>
-            <div className="space-y-2 text-sm">
-              {camera.state === 'starting' ? (
-                <p className="text-muted">Ngambil model {view === 'front' ? 'wajah (4 MB)' : 'badan (6 MB)'}, cuma sekali di awal.</p>
-              ) : calibrated ? (
-                <>
-                  <Badge tone="accent" icon={IconCheck}>
-                    Terkalibrasi
-                  </Badge>
-                  <p className="text-muted">Kalibrasi ulang kalau kamera atau kursinya pindah.</p>
-                </>
-              ) : (
-                <>
-                  <Badge tone="alert">Belum dikalibrasi</Badge>
-                  <p className="text-muted">Duduk tegak kayak biasa kerja, terus tekan Kalibrasi.</p>
-                </>
-              )}
-            </div>
+          {/* Mirrored like a mirror; the skeleton overlay flips with the video. */}
+          <div
+            ref={slot}
+            className="relative grid aspect-[4/3] w-full place-items-center overflow-hidden rounded-xl bg-surface text-center text-sm text-muted [&>div]:-scale-x-100"
+          >
+            {camera.state === 'starting' && <span className="px-4">Nyalain…</span>}
+            {previewElsewhere && <span className="px-4">Videonya ada di jendela kecil</span>}
+          </div>
+          {camera.state === 'on' && !previewElsewhere && (
+            <p className="text-sm text-muted text-pretty">
+              {view === 'front'
+                ? 'Garis kuning: garis mata dan ujung hidung. Dari situ miring, maju, dan bungkuknya dihitung.'
+                : 'Garis kuning: telinga, bahu, dan pinggul yang dipakai ngukur. Titik merah artinya nggak kelihatan.'}
+            </p>
+          )}
+          <div className="space-y-2 text-sm">
+            {camera.state === 'starting' ? (
+              <p className="text-muted">Ngambil model {view === 'front' ? 'wajah (4 MB)' : 'badan (6 MB)'}, cuma sekali di awal.</p>
+            ) : calibrated ? (
+              <>
+                <Badge tone="accent" icon={IconCheck}>
+                  Terkalibrasi
+                </Badge>
+                <p className="text-muted">Kalibrasi ulang kalau kamera atau kursinya pindah.</p>
+              </>
+            ) : (
+              <>
+                <Badge tone="alert">Belum dikalibrasi</Badge>
+                <p className="text-muted">Duduk tegak kayak biasa kerja, terus tekan Kalibrasi.</p>
+              </>
+            )}
           </div>
           {camera.state === 'on' && (
             <div className="flex flex-wrap items-center gap-2">
@@ -167,7 +185,7 @@ export default function CameraPanel({ camera, onStart, onStop, calibrated, calib
                 type="button"
                 className={calibrated ? 'btn btn-sm' : 'btn btn-primary btn-sm'}
                 onClick={runCalibration}
-                disabled={progress !== null}
+                disabled={progress !== null || setupState === 'busy'}
               >
                 <IconRefresh className="size-4" />
                 {progress === null
@@ -182,6 +200,36 @@ export default function CameraPanel({ camera, onStart, onStop, calibrated, calib
             </div>
           )}
           {calError && <p className="text-sm text-alert-ink">{calError}</p>}
+          {camera.state === 'on' && view === 'front' && (
+            <div className="space-y-3 border-t border-rule pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold">{setup ? `Setup meja: ${setup.score}/100` : 'Cek setup meja'}</p>
+                <button type="button" className="btn btn-sm" onClick={runSetup} disabled={setupState === 'busy' || progress !== null}>
+                  {setupState === 'busy' ? 'Lihat layar, diam sebentar…' : setup ? 'Cek lagi' : 'Cek jarak, tinggi, cahaya (3 dtk)'}
+                </button>
+              </div>
+              {setupState === 'missed' && <p className="text-sm text-alert-ink">Wajahmu kurang lama kelihatan. Hadap ke layar, terus coba lagi.</p>}
+              {setup && (
+                <ul className="space-y-3">
+                  {setup.checks.map((c) => (
+                    <li key={c.key} className="flex gap-2.5 text-sm">
+                      <span className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full ${c.ok ? 'bg-accent-soft text-accent' : 'bg-kunyit-soft text-alert-ink'}`}>
+                        {c.ok ? <IconCheck className="size-3" /> : <IconInfo className="size-3" />}
+                      </span>
+                      <span className="text-pretty">
+                        <span className="font-semibold">{c.label}</span>
+                        <span className="text-muted">: {c.value}. </span>
+                        {c.tip}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!setup && setupState !== 'missed' && (
+                <p className="text-sm text-muted text-pretty">Kamera ngukur jarak matamu ke layar, tinggi layar, dan cahaya di ruangan, terus ngasih saran yang bisa langsung dibenerin.</p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test lib/*.test.ts"
+    "test": "node --test lib/*.test.ts",
+    "voice": "node scripts/voice.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.2.3",

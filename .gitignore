@@ -46,3 +46,6 @@ next-env.d.ts
 
 # blender backups
 *.blend1
+
+# raw story renders; the site serves the WebP copies in public/story and public/cast
+/assets/story/render/

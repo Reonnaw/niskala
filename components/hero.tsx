@@ -2,17 +2,17 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useEffectEvent, useState, type CSSProperties } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type CSSProperties } from 'react';
 import { sideWord } from '@/lib/format';
 import { UPRIGHT } from '@/lib/signals';
-import type { FigureId } from '@/lib/store';
+import { CAST, CastFrame, CastPicker, type CastId } from './cast';
 import { IconArrowRight, IconPosture } from './icons';
-import PostureFigure, { FIGURES, FigurePicker, FrontFigure, HEAD_MAX_DEG, SIDE_MAX_DEG, TORSO_MAX_DEG } from './posture-figure';
+import { HEAD_MAX_DEG, SIDE_MAX_DEG, TORSO_MAX_DEG } from './posture-figure';
 
 const THRESHOLD = 45;
 // Shorter than the workspace's ~10 s so the effect shows up while someone is reading the page.
 const HOLD_MS = 1500;
-// Until someone touches a control the figures act it out themselves, one cycle each:
+// Until someone touches a control the two characters act it out themselves, one cycle each:
 // lean in, hold long enough for the edge to light, straighten, rest.
 const CYCLE_MS = 8000;
 const ease = (x: number) => 1 - (1 - x) ** 3;
@@ -27,8 +27,11 @@ export default function Hero() {
   const [slouch, setSlouch] = useState(0);
   const [lean, setLean] = useState(0);
   const [glow, setGlow] = useState(false);
-  const [who, setWho] = useState<FigureId>('raka');
+  const [who, setWho] = useState<CastId>('raka');
   const [auto, setAuto] = useState(true);
+  // The edge glow is fixed to the viewport; once the hero scrolls away the story below owns it.
+  const sectionRef = useRef<HTMLElement>(null);
+  const [inView, setInView] = useState(true);
   const off = Math.max(slouch, Math.abs(lean)) >= THRESHOLD;
 
   const pose = (s: number, l: number) => {
@@ -38,18 +41,24 @@ export default function Hero() {
   };
 
   useEffect(() => {
+    const io = new IntersectionObserver(([e]) => setInView(e.isIntersecting));
+    io.observe(sectionRef.current!);
+    return () => io.disconnect();
+  }, []);
+
+  useEffect(() => {
     if (!off) return;
     const id = setTimeout(() => setGlow(true), HOLD_MS);
     return () => clearTimeout(id);
   }, [off]);
 
-  // Returns false once every figure has had its turn.
+  // Returns false after four cycles: Raka slouches, Ayu leans left, Raka leans right, Ayu slouches.
   const play = useEffectEvent((t: number) => {
     const cycle = Math.floor(t / CYCLE_MS);
-    if (cycle >= FIGURES.length) return false;
+    if (cycle >= 4) return false;
     const a = Math.round(autoAmount(t % CYCLE_MS) * 72);
-    setWho(FIGURES[cycle].id);
-    if (cycle % 2 === 0) pose(a, 0);
+    setWho(CAST[cycle % 2].id);
+    if (cycle % 3 === 0) pose(a, 0);
     else pose(0, cycle === 1 ? -a : a);
     return true;
   });
@@ -74,8 +83,8 @@ export default function Hero() {
   const take = () => setAuto(false);
 
   return (
-    <section className="mx-auto grid max-w-6xl gap-x-16 gap-y-10 px-4 pt-14 pb-20 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:grid-rows-[1fr_auto_auto_1fr] lg:gap-y-12 lg:pt-12">
-      <div aria-hidden className="edge-glow" style={{ opacity: glow ? (auto ? 0.6 : 0.8) : 0 }} />
+    <section ref={sectionRef} className="mx-auto grid max-w-6xl gap-x-16 gap-y-10 px-4 pt-14 pb-20 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:grid-rows-[1fr_auto_auto_1fr] lg:gap-y-12 lg:pt-12">
+      <div aria-hidden className="edge-glow" style={{ opacity: glow && inView ? (auto ? 0.6 : 0.8) : 0 }} />
 
       <h1 className="text-[2.6rem] leading-[1.05] font-extrabold sm:text-6xl lg:col-start-1 lg:row-start-2 lg:text-[3.7rem]">
         Lihat{' '}
@@ -96,12 +105,18 @@ export default function Hero() {
         </div>
         <Image src="/3d/plant.webp" alt="" width={210} height={460} unoptimized className="absolute -bottom-3 -left-9 z-10 hidden h-auto w-16 drop-shadow-lg lg:block xl:w-[4.5rem]" />
         <div className="stage card relative overflow-hidden">
-          <div className="mx-auto aspect-[1150/1180] max-h-[64vh] w-full">
-            <PostureFigure posture={posture} who={who} />
+          <div className="mx-auto aspect-square max-h-[64vh] w-full">
+            <CastFrame
+              who={who}
+              view="side"
+              amount={slouch / 100}
+              eager
+              alt={`Dari samping: punggung bungkuk ${torsoDeg}° dan kepala ${headDeg}° ke depan`}
+            />
           </div>
           <div className="card absolute top-3 right-3 w-[30%] p-1.5">
-            <div className="aspect-[560/760] rounded-xl bg-surface">
-              <FrontFigure posture={posture} who={who} />
+            <div className="aspect-[640/760] overflow-hidden rounded-xl bg-surface">
+              <CastFrame who={who} view="front" amount={lean / 100} eager alt={lean === 0 ? 'Dari depan: tegak' : `Dari depan: miring ${sideDeg}° ke ${sideWord(lean)}`} />
             </div>
           </div>
           <p className="float-card absolute right-3 bottom-3 flex items-center gap-2 py-2 font-semibold xl:hidden" aria-live={auto ? 'off' : 'polite'}>
@@ -160,13 +175,12 @@ export default function Hero() {
           </label>
           <div className="flex items-center gap-5">
             <span className="w-32 shrink-0 sm:w-40">Ganti orang</span>
-            <FigurePicker
+            <CastPicker
               value={who}
               onChange={(id) => {
                 take();
                 setWho(id);
               }}
-              size="size-11"
             />
           </div>
         </div>

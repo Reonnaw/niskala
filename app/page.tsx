@@ -1,43 +1,11 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { IconArrowRight, IconCamera, IconCheck, IconLock, IconPip, IconShield } from '@/components/icons';
+import { CastFrame } from '@/components/cast';
 import Hero from '@/components/hero';
-import PostureFigure, { FrontFigure } from '@/components/posture-figure';
 import SiteFooter from '@/components/site-footer';
+import Story from '@/components/story';
 import { ROUTINES } from '@/lib/routines';
-import { UPRIGHT } from '@/lib/signals';
-
-// Each signal has its own dye and a 3D object from assets/objects/objects.blend.
-const SMALL_SIGNALS: { img: string; hue: string; name: string; how: string; answer: string }[] = [
-  {
-    img: 'eye',
-    hue: 'hue-daun',
-    name: 'Kedipan',
-    how: 'Normalnya 15 sampai 20 kali per menit. Pas natap layar, bisa anjlok jauh.',
-    answer: 'Kalau kelamaan di bawah sepuluh per menit, pinggir layar nyala, plus ada istirahat mata 20 detik.',
-  },
-  {
-    img: 'hourglass',
-    hue: 'hue-kunyit',
-    name: 'Lama di depan layar',
-    how: 'Dihitung selama halaman ini atau jendela kecilnya kelihatan. Tanpa kamera juga jalan.',
-    answer: 'Istirahat mata 20-20-20 dan stretching 60 detik, sesuai jadwalmu.',
-  },
-  {
-    img: 'mug',
-    hue: 'hue-mengkudu',
-    name: 'Pas kamu pergi',
-    how: 'Kamera lihat kursimu kosong lebih dari semenit.',
-    answer: 'Waktu itu dihitung jeda, bukan waktu layar. Jadwal pengingatnya ikut nyesuain.',
-  },
-  {
-    img: 'moon',
-    hue: 'hue-ungu',
-    name: 'Jam malam',
-    how: 'Jam tidurmu, cukup diatur sekali.',
-    answer: 'Dua jam sebelumnya layar mulai hangat, dan kamu diingetin buat mulai beres-beres.',
-  },
-];
 
 const CAMERAS = [
   {
@@ -83,53 +51,7 @@ export default function Home() {
         <section id="cara-kerja" className="band motif-kawung">
           <div className="mx-auto max-w-6xl px-4 py-20 sm:px-8 sm:py-24">
             <h2 className="max-w-2xl text-3xl sm:text-[2.6rem] sm:leading-tight">Enam hal yang dicek, dan cara Niskala ngingetin kamu.</h2>
-            <div className="mt-12 grid gap-5 lg:grid-cols-2">
-              <article className="band-card hue-mengkudu overflow-hidden">
-                <div className="h-60 bg-hue/20 p-3">
-                  <PostureFigure posture={{ ...UPRIGHT, torso: 0.75, head: 0.85 }} who="sekar" className="drop-shadow-xl" />
-                </div>
-                <div className="p-6">
-                  <h3 className="text-xl">Bungkuk ke depan</h3>
-                  <p className="mt-2 text-on-band-muted text-pretty">
-                    Kamera depan ngukur tinggi, ukuran, dan anggukan wajahmu. Kamera samping langsung ngukur sudut leher dan punggung.
-                    Semuanya dibandingin sama posisi tegakmu waktu kalibrasi 4 detik.
-                  </p>
-                  <p className="mt-4 flex gap-2 text-pretty">
-                    <IconArrowRight className="mt-1 size-4 shrink-0 text-band-accent" />
-                    Pinggir layar nyala kuning, tapi baru kalau posisi itu bertahan sekitar sepuluh detik.
-                  </p>
-                </div>
-              </article>
-              <article className="band-card hue-ungu overflow-hidden">
-                <div className="h-60 bg-hue/20 p-3">
-                  <FrontFigure posture={{ ...UPRIGHT, side: 0.85, tilt: -0.35 }} who="bima" className="drop-shadow-xl" />
-                </div>
-                <div className="p-6">
-                  <h3 className="text-xl">Miring ke samping</h3>
-                  <p className="mt-2 text-on-band-muted text-pretty">
-                    Wajah geser ke kiri atau kanan, atau garis matamu miring. Noleh ke monitor kedua nggak dihitung miring.
-                  </p>
-                  <p className="mt-4 flex gap-2 text-pretty">
-                    <IconArrowRight className="mt-1 size-4 shrink-0 text-band-accent" />
-                    Pinggir layar nyala juga, dan kamu dikasih tahu arahnya: badan miring ke kanan, atau kepala miring ke kiri.
-                  </p>
-                </div>
-              </article>
-            </div>
-            <div className="mt-5 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-              {SMALL_SIGNALS.map((s) => (
-                <article key={s.name} className={`band-card ${s.hue} overflow-hidden`}>
-                  <div className="grid h-36 place-items-center bg-hue/30">
-                    <Image src={`/3d/${s.img}.webp`} alt="" width={460} height={460} unoptimized className="h-24 w-auto drop-shadow-lg" />
-                  </div>
-                  <div className="p-6">
-                    <h3 className="text-lg">{s.name}</h3>
-                    <p className="mt-2 text-on-band-muted text-pretty">{s.how}</p>
-                    <p className="mt-3 text-pretty">{s.answer}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
+            <Story />
           </div>
         </section>
 
@@ -140,7 +62,7 @@ export default function Home() {
               <article key={c.title} className={`card ${c.hue} grid overflow-hidden sm:grid-cols-[11rem_1fr]`}>
                 <div className="stage stage-hue grid place-items-center border-b border-rule p-3 sm:border-r sm:border-b-0">
                   <div className={c.front ? 'h-44 sm:h-full' : 'h-44 w-full sm:h-auto'}>
-                    {c.front ? <FrontFigure posture={null} who={c.who} /> : <PostureFigure posture={{ ...UPRIGHT, torso: 0.35, head: 0.5 }} who={c.who} />}
+                    <CastFrame who={c.who} view={c.front ? 'front' : 'side'} amount={c.front ? 0 : 0.35} alt="" />
                   </div>
                 </div>
                 <div className="p-6">

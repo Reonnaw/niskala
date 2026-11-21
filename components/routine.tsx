@@ -1,18 +1,30 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useEffectEvent, useState } from 'react';
 import { sideWord } from '@/lib/format';
-import { ROUTINES, type RoutineKind as Kind } from '@/lib/routines';
-import type { Posture } from '@/lib/signals';
+import { ROUTINES, type Exercise, type RoutineKind as Kind } from '@/lib/routines';
+import { dominant, driftOf, type Posture } from '@/lib/signals';
+import type { FigureId } from '@/lib/store';
+import { hush, speak, stepIntro } from '@/lib/voice';
 import { IconCamera, IconCheck, IconNext, IconPause, IconPlay } from './icons';
 import { HEAD_MAX_DEG, TILT_MAX_DEG } from './posture-figure';
 import { ProgressRing } from './ui';
 
-export default function RoutineRunner({ kind, posture, blinkTotal, onDone, onExit, compact = false }: {
+const clip = (who: FigureId, e: Exercise) => `/exercise/${who}/${e}.webp`;
+
+/** Seconds spent upright, out of the seconds the camera could see you, across the steps that check it. */
+export type Upright = { held: number; measured: number };
+
+export default function RoutineRunner({ kind, who, posture, threshold, blinkTotal, voice, onDone, onExit, compact = false }: {
   kind: Kind;
+  who: FigureId;
   posture: Posture | null;
+  /** The drift that counts as leaning; "upright" is under half of it, like the state pill. */
+  threshold: number;
   blinkTotal: number | null;
-  onDone: () => void;
+  voice: boolean;
+  onDone: (upright: Upright) => void;
   onExit: () => void;
   compact?: boolean;
 }) {
@@ -23,6 +35,7 @@ export default function RoutineRunner({ kind, posture, blinkTotal, onDone, onExi
   const [t, setT] = useState(0);
   const [running, setRunning] = useState(true);
   const [stepBlinks, setStepBlinks] = useState<{ index: number; start: number | null }>({ index: 0, start: blinkTotal });
+  const [upright, setUpright] = useState<Upright>({ held: 0, measured: 0 });
 
   const index = Math.max(0, starts.findLastIndex((s) => t >= s));
   const step = steps[index];
@@ -35,9 +48,26 @@ export default function RoutineRunner({ kind, posture, blinkTotal, onDone, onExi
     const nextIndex = Math.max(0, starts.findLastIndex((s) => next >= s));
     if (nextIndex !== stepBlinks.index) setStepBlinks({ index: nextIndex, start: blinkTotal });
     setT(next);
-    if (next >= total) onDone();
+    if (next >= total) onDone(upright);
   };
-  const advance = useEffectEvent((dt: number) => goTo(t + dt));
+  const isUpright = posture !== null && driftOf(posture) < threshold * 0.45;
+  const advance = useEffectEvent((dt: number) => {
+    if (step.check === 'upright' && posture) setUpright((u) => ({ held: u.held + (isUpright ? dt : 0), measured: u.measured + dt }));
+    goTo(t + dt);
+  });
+
+  // A new step announces its name; after that only the cue changes are read out.
+  const announce = useEffectEvent(() => speak(inStep < 1 ? stepIntro(step) : cue));
+  useEffect(() => {
+    if (!voice) return;
+    if (running) announce();
+    else hush();
+  }, [voice, running, index, cue]);
+
+  // Every move of the routine loads up front, so a new step shows its clip at once.
+  useEffect(() => {
+    for (const s of steps) new window.Image().src = clip(who, s.visual);
+  }, [steps, who]);
 
   useEffect(() => {
     if (!running) return;
@@ -57,22 +87,40 @@ export default function RoutineRunner({ kind, posture, blinkTotal, onDone, onExi
   } else if (step.check === 'tilt' && posture) {
     const deg = Math.round(posture.tilt * TILT_MAX_DEG);
     feedback = Math.abs(deg) < 4 ? 'Kepala masih tegak. Biarin miring pelan-pelan.' : `Kepala miring ${Math.abs(deg)}° ke ${sideWord(deg)}.`;
+  } else if (step.check === 'upright' && posture) {
+    const d = dominant(posture);
+    const held = `${Math.round(upright.held)} dtk tegak sejauh ini.`;
+    feedback = isUpright
+      ? `Pas, tegak. ${held}`
+      : d.kind === 'forward'
+        ? `Masih bungkuk. Tegakin punggung, bahu turun. ${held}`
+        : `${d.kind === 'side' ? 'Badan' : 'Kepala'} miring ke ${d.dir}. Balik ke tengah. ${held}`;
   } else if (step.check === 'blinks' && blinkTotal !== null && stepBlinks.start !== null) {
     feedback = `${blinkTotal - stepBlinks.start} kedipan kehitung.`;
   }
 
   return (
     <div className={compact ? 'space-y-3' : 'card space-y-5 p-5 sm:p-6'} aria-label={title}>
-      <div className="flex items-center gap-4 sm:gap-6">
-        <ProgressRing value={t / total} size={compact ? 76 : 112}>
-          <p className={`${compact ? 'text-base' : 'text-2xl'} leading-none font-bold tabular-nums`}>
-            {Math.ceil(total - t)}
-            <span className="text-[0.6em] font-semibold text-muted"> dtk</span>
-          </p>
-        </ProgressRing>
-        <div className="min-w-0" aria-live="polite">
-          <p className={`${compact ? 'text-lg' : 'text-2xl sm:text-3xl'} leading-tight font-bold tracking-tight text-balance`}>{cue}</p>
-          {!compact && <p className="mt-2 text-muted text-pretty">{step.how}</p>}
+      <div className={compact ? 'flex items-center gap-3' : 'flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6'}>
+        <Image
+          src={clip(who, step.visual)}
+          alt={`Contoh gerakan: ${step.title}`}
+          width={360}
+          height={360}
+          unoptimized
+          className={`shrink-0 rounded-2xl bg-surface ${compact ? 'size-20' : 'mx-auto size-48 sm:mx-0 sm:size-44'}`}
+        />
+        <div className="flex items-center gap-4 sm:gap-6">
+          <ProgressRing value={t / total} size={compact ? 76 : 112}>
+            <p className={`${compact ? 'text-base' : 'text-2xl'} leading-none font-bold tabular-nums`}>
+              {Math.ceil(total - t)}
+              <span className="text-[0.6em] font-semibold text-muted"> dtk</span>
+            </p>
+          </ProgressRing>
+          <div className="min-w-0" aria-live="polite">
+            <p className={`${compact ? 'text-lg' : 'text-2xl sm:text-3xl'} leading-tight font-bold tracking-tight text-balance`}>{cue}</p>
+            {!compact && <p className="mt-2 text-muted text-pretty">{step.how}</p>}
+          </div>
         </div>
       </div>
 

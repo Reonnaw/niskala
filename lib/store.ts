@@ -1,3 +1,4 @@
+import type { Coach } from './coach';
 import type { Baseline, ProfileBaseline, Sensitivity } from './signals';
 
 // Everything here is local to the browser. Only `SessionSummary` and part of
@@ -7,7 +8,7 @@ export type Warmth = 'auto' | 'on' | 'off';
 export type Mode = 'camera' | 'timer' | 'demo';
 export type Theme = 'auto' | 'light' | 'dark';
 export type CameraView = 'front' | 'side';
-export type FigureId = 'raka' | 'ayu' | 'sekar' | 'bima';
+export type FigureId = 'raka' | 'ayu';
 
 export type Prefs = {
   mode: Mode;
@@ -19,6 +20,7 @@ export type Prefs = {
   eyeMin: number; // 0 = off
   resetMin: number; // 0 = off
   sound: boolean;
+  voice: boolean; // spoken reminders and step guidance
   notify: boolean; // system notifications while Niskala is not in focus
   figure: FigureId; // who stands in for you on screen
   sync: boolean;
@@ -35,6 +37,7 @@ export const DEFAULT_PREFS: Prefs = {
   eyeMin: 20,
   resetMin: 50,
   sound: false,
+  voice: false,
   notify: false,
   figure: 'raka',
   sync: false,
@@ -63,6 +66,7 @@ const KEY = {
   sessions: 'niskala:sessions',
   syncedAt: 'niskala:synced-at',
   theme: 'niskala:theme',
+  coach: 'niskala:coach',
 };
 const MAX_SESSIONS = 200;
 
@@ -112,11 +116,14 @@ function stored<T>(key: string, fallback: T, parse: (v: T | null) => T = (v) => 
   };
 }
 
-export const prefsStore = stored<Prefs>(KEY.prefs, DEFAULT_PREFS, (v) => ({ ...DEFAULT_PREFS, ...v }));
+// Sekar and Bima left with the 2D figures; anyone who picked them gets Raka.
+export const prefsStore = stored<Prefs>(KEY.prefs, DEFAULT_PREFS, (v) => ({ ...DEFAULT_PREFS, ...v, figure: v?.figure === 'ayu' ? 'ayu' : 'raka' }));
 // Baselines saved before sideways tracking lack roll and cx; asking for a fresh calibration is safer than guessing.
 export const baselineStore = stored<Baseline | null>(KEY.baseline, null, (v) => (v && 'roll' in v && 'cx' in v ? v : null));
 export const profileBaselineStore = stored<ProfileBaseline | null>(KEY.baselineSide, null, (v) => (v && 'neck' in v && 'trunk' in v ? v : null));
 export const themeStore = stored<Theme>(KEY.theme, 'auto');
+// The last coaching and the local day it was asked for.
+export const coachStore = stored<{ day: string; coach: Coach } | null>(KEY.coach, null);
 const NO_SESSIONS: SessionSummary[] = [];
 export const sessionsStore = stored<SessionSummary[]>(KEY.sessions, NO_SESSIONS, (v) =>
   // Rows saved before eye breaks existed lack the field.

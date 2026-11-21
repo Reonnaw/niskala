@@ -25,4 +25,4 @@ export function minutes(s: number) {
 }
 
 /** "kanan" / "kiri" for a signed sideways value, from the user's point of view. */
-export const sideWord = (v: number) => (v > 0 ? 'kanan' : 'kiri');
+export const sideWord = (v: number): 'kanan' | 'kiri' => (v > 0 ? 'kanan' : 'kiri');

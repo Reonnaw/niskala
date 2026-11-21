@@ -5,14 +5,16 @@ import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore, type
 import { createPortal } from 'react-dom';
 import { duration, hhmm, minutes, parseHhmm, sideWord } from '@/lib/format';
 import { ROUTINES } from '@/lib/routines';
-import { SENSITIVITY, driftOf, glowFrom, type Posture, type Sensitivity } from '@/lib/signals';
+import { SENSITIVITY, dominant, driftOf, glowFrom, type Posture, type Sensitivity } from '@/lib/signals';
 import { chime } from '@/lib/sound';
-import { clearAll, exportData, prefsStore, type CameraView, type Mode, type Prefs, type Warmth } from '@/lib/store';
+import { byDay, dayScore, streak } from '@/lib/insights';
+import { clearAll, exportData, prefsStore, sessionsStore, type CameraView, type Mode, type Prefs, type Warmth } from '@/lib/store';
 import { syncConfigured } from '@/lib/sync';
 import { allowNotifications, canNotify } from '@/lib/notify';
 import { toast } from '@/lib/toast';
-import { useMonitor, type Routine, type Sim, type Snapshot } from '@/lib/use-monitor';
+import { useMonitor, type BreakKind, type Routine, type Sim, type Snapshot } from '@/lib/use-monitor';
 import { describeCameraError, listCameras, startVision } from '@/lib/vision';
+import { SAY, doneLine, hush, speak } from '@/lib/voice';
 import CameraPanel, { type Camera } from './camera-panel';
 import {
   IconBell,
@@ -35,8 +37,9 @@ import {
 } from './icons';
 import { openMiniMonitor, usePipSupported } from './mini-monitor';
 import Onboarding from './onboarding';
-import PostureFigure, { FigurePicker, FrontFigure, HEAD_MAX_DEG, SIDE_MAX_DEG, TILT_MAX_DEG, TORSO_MAX_DEG } from './posture-figure';
-import RoutineRunner from './routine';
+import { CastPicker } from './cast';
+import PostureFigure, { FrontFigure, HEAD_MAX_DEG, SIDE_MAX_DEG, TILT_MAX_DEG, TORSO_MAX_DEG } from './posture-figure';
+import RoutineRunner, { type Upright } from './routine';
 import { Badge, Meter, Stat } from './ui';
 import { ConfirmDialog, Segmented, Switch, Tabs } from './ui-client';
 
@@ -49,19 +52,10 @@ const SENSITIVITY_NOTE: Record<Sensitivity, string> = {
   strict: 'Geser dikit aja ketahuan, setelah sekitar 6 detik.',
 };
 
-const CUE_TEXT: Record<Routine, [string, string]> = {
+const CUE_TEXT: Record<BreakKind, [string, string]> = {
   eye: ['Waktunya istirahat mata 20 detik.', 'Lihat yang jauh, terus kedip penuh.'],
   reset: ['Waktunya stretching 60 detik.', 'Leher, bahu, dan mata, dipandu satu-satu.'],
 };
-
-/** Which way the posture has moved most: forward, sideways, or a head tilt. */
-function dominant(p: Posture) {
-  const forward = Math.max(p.head, p.torso);
-  const side = Math.abs(p.side);
-  const tilt = Math.abs(p.tilt);
-  if (forward >= side && forward >= tilt) return { kind: 'forward' as const };
-  return side >= tilt ? { kind: 'side' as const, dir: sideWord(p.side) } : { kind: 'tilt' as const, dir: sideWord(p.tilt) };
-}
 
 function postureWord(p: Posture, threshold: number) {
   const drift = driftOf(p);
@@ -72,7 +66,7 @@ function postureWord(p: Posture, threshold: number) {
 }
 
 function statusLine(snap: Snapshot, mode: Mode, cameraOn: boolean, calibrated: boolean, routine: Routine | null, view: CameraView) {
-  if (routine) return 'Lagi jeda. Pinggir layar nggak bakal nyala sampai selesai.';
+  if (routine) return routine === 'train' ? 'Lagi latihan postur. Pinggir layar nggak nyala sampai selesai.' : 'Lagi jeda. Pinggir layar nggak bakal nyala sampai selesai.';
   if (snap.away) return 'Kamu lagi nggak di depan layar. Waktu ini nggak dihitung waktu layar, tapi jadi jeda.';
   if (mode === 'timer') return 'Mode timer: jeda datang sesuai jadwal. Postur dan kedipan nggak dicek.';
   if (mode === 'camera' && !cameraOn) return 'Kamera mati. Nyalain di tab Mode, atau pakai mode timer.';
@@ -80,7 +74,7 @@ function statusLine(snap: Snapshot, mode: Mode, cameraOn: boolean, calibrated: b
   if (mode === 'camera' && !snap.posture)
     return view === 'front'
       ? 'Wajahmu nggak kelihatan. Lanjut lagi pas kamu balik.'
-      : 'Telinga, bahu, atau pinggul nggak kelihatan. Lanjut lagi pas badanmu masuk bingkai.';
+      : 'Telinga atau bahu nggak kelihatan. Lanjut lagi pas badanmu masuk bingkai.';
   if (snap.glow > 0 && snap.driftFor === 0 && snap.lowBlinkFor === 0) return 'Udah bagus lagi. Pinggir layar padam sebentar lagi.';
   if (snap.glow > 0 && snap.postureStrain >= snap.eyeStrain && snap.posture) {
     const d = dominant(snap.posture);
@@ -92,8 +86,10 @@ function statusLine(snap: Snapshot, mode: Mode, cameraOn: boolean, calibrated: b
   }
   if (snap.glow > 0)
     return `Pinggir layar nyala karena kamu cuma ngedip ${Math.round(snap.blinkRate ?? 0)} kali per menit${snap.lowBlinkFor >= 1 ? ` selama ${duration(snap.lowBlinkFor)}` : ''}. Kedip penuh, atau lihat jauh sebentar.`;
+  if (snap.tooClose && snap.distanceCm !== null) return `Kamu kedeketan ke layar, sekitar ${snap.distanceCm} cm. Mundur dikit sampai sekitar satu lengan, 50 sampai 75 cm.`;
   if (snap.driftFor > 0) return 'Postur mulai geser. Pinggir layar baru nyala kalau kelamaan.';
   if (snap.lowBlinkFor > 0) return 'Kedipan mulai jarang. Pinggir layar baru nyala kalau terus begitu.';
+  if (snap.backHidden) return 'Pinggulmu ketutup, jadi yang dicek cuma leher. Mundurin atau naikin kamera biar punggung ikut kebaca.';
   return 'Tegak, ngedip normal. Aman.';
 }
 
@@ -169,7 +165,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function CueBanner({ cue, onStart, onSnooze }: { cue: Routine; onStart: () => void; onSnooze: () => void }) {
+function CueBanner({ cue, onStart, onSnooze }: { cue: BreakKind; onStart: () => void; onSnooze: () => void }) {
   const [title, body] = CUE_TEXT[cue];
   return (
     <div role="status" className="enter card flex flex-wrap items-center gap-x-4 gap-y-3 border-cue px-4 py-3">
@@ -196,6 +192,7 @@ export default function Workspace() {
   const hydrated = useSyncExternalStore(noop, () => true, () => false);
   const pipSupported = usePipSupported();
   const notifySupported = useSyncExternalStore(noop, canNotify, () => false);
+  const sessions = useSyncExternalStore(sessionsStore.subscribe, sessionsStore.get, sessionsStore.server);
   const [sim, setSim] = useState<Sim>({ head: 0, torso: 0, side: 0, tilt: 0, blink: 16, late: false });
   const [routine, setRoutine] = useState<Routine | null>(null);
   const [camera, setCamera] = useState<Camera>({ state: 'off' });
@@ -220,7 +217,7 @@ export default function Workspace() {
       const v = await startVision(mon.onSample, opts);
       if (token !== cameraRun.current.token) return v.stop();
       cameraRun.current.stop = v.stop;
-      setCamera({ state: 'on', video: v.video });
+      setCamera({ state: 'on', preview: v.preview });
       // Device names are only readable once permission is granted.
       listCameras().then(setCameras, () => {});
     } catch (e) {
@@ -272,22 +269,29 @@ export default function Workspace() {
     }
   }
 
-  function finishRoutine() {
+  function finishRoutine(upright: Upright) {
     if (!routine) return;
     mon.completeRoutine(routine);
-    toast(`${ROUTINES[routine].title} selesai.`);
+    const done = `${ROUTINES[routine].title} selesai.`;
+    // A score only means something when the camera saw you for a fair part of the checked steps.
+    const msg = routine === 'train' && upright.measured >= 10 ? `${done} Kamu tegak ${Math.round(upright.held)} dari ${Math.round(upright.measured)} detik.` : done;
+    toast(msg);
+    if (prefs.voice) speak(doneLine(routine, upright));
     setRoutine(null);
   }
 
   // Stopping early is not the same as taking the break: bring the reminder back in 5 minutes.
   function stopRoutine() {
     if (!routine) return;
-    mon.snooze(routine);
-    toast('Jeda distop. Diingetin lagi 5 menit lagi.', 'info');
+    hush();
+    if (routine !== 'train') {
+      mon.snooze(routine);
+      toast('Jeda distop. Diingetin lagi 5 menit lagi.', 'info');
+    }
     setRoutine(null);
   }
 
-  function snooze(kind: Routine) {
+  function snooze(kind: BreakKind) {
     mon.snooze(kind);
     toast('Oke, diingetin lagi 5 menit lagi.', 'info');
   }
@@ -307,7 +311,7 @@ export default function Workspace() {
     if (!pip || camera.state !== 'on') return;
     const holder = pip.document.createElement('div');
     holder.className = 'offscreen-video';
-    holder.append(camera.video);
+    holder.append(camera.preview);
     pip.document.body.append(holder);
   }, [pip, camera]);
 
@@ -326,6 +330,7 @@ export default function Workspace() {
     else if (routine || !prefs.onboarded) return;
     else if (e.key === 'r') setRoutine('reset');
     else if (e.key === 'e') setRoutine('eye');
+    else if (e.key === 'l') setRoutine('train');
     else if (e.key === 'm') toggleMini();
   });
   useEffect(() => {
@@ -340,6 +345,11 @@ export default function Workspace() {
   const posture = tracked ? snap.posture : null;
   const session = snap.session;
   const next = nextBreak(snap);
+  // The current session is saved every 15 s, so today's score follows it closely. The clock is read only
+  // after hydration: the prerendered page has no "today".
+  const days = hydrated ? byDay(sessions, 60, new Date()) : [];
+  const todayScore = days.length ? dayScore(days[days.length - 1]) : null;
+  const run = streak(days);
   const status = statusLine(snap, mode, cameraOn, calibrated, routine, view);
   // The tab title is visible from the taskbar or another monitor, so it carries the state too.
   const title = routine
@@ -374,8 +384,11 @@ export default function Workspace() {
     <RoutineRunner
       key={routine}
       kind={routine}
+      who={prefs.figure}
       posture={snap.posture}
+      threshold={S.drift}
       blinkTotal={snap.blinkTotal}
+      voice={prefs.voice}
       onDone={finishRoutine}
       onExit={stopRoutine}
       compact={pip !== null}
@@ -410,6 +423,11 @@ export default function Workspace() {
             <span className="text-muted">Sesi </span>
             <span className="font-semibold tabular-nums">{session ? minutes(session.active_s) : '0 dtk'}</span>
           </p>
+          <p className="text-sm" title="Dari waktu tegak dan kedipan yang dicek hari ini. Target 70.">
+            <span className="text-muted">Skor hari ini </span>
+            <span className="font-semibold tabular-nums">{todayScore ?? '–'}</span>
+            {run > 0 && <span className="text-muted"> · {run} hari beruntun</span>}
+          </p>
           <p className="text-sm">
             <span className="text-muted">Jeda berikutnya </span>
             <span className="font-semibold tabular-nums">{next.value}</span>
@@ -419,6 +437,10 @@ export default function Workspace() {
             <button type="button" className="btn btn-sm flex-1 sm:flex-none" disabled={routine !== null} onClick={() => setRoutine('reset')}>
               <IconStretch className="size-4" />
               Stretching 60 dtk
+            </button>
+            <button type="button" className="btn btn-sm flex-1 sm:flex-none" disabled={routine !== null} onClick={() => setRoutine('train')}>
+              <IconPosture className="size-4" />
+              Latihan postur
             </button>
             <button type="button" className="btn btn-sm flex-1 sm:flex-none" onClick={toggleMini} aria-pressed={pip !== null}>
               <IconPip className="size-4" />
@@ -447,6 +469,10 @@ export default function Workspace() {
                     </p>
                   )}
                 </div>
+                {/* Its own radio name: the Setelan tab can show a second picker at the same time. */}
+                <div className="mt-1.5 flex justify-center">
+                  <CastPicker value={prefs.figure} onChange={(figure) => update({ figure })} size="size-8" label="Ganti figur" />
+                </div>
               </figure>
               {deg && (
                 <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5" aria-label="Sudut saat ini">
@@ -455,6 +481,7 @@ export default function Workspace() {
                   <span className="chip">
                     Miring {Math.abs(deg.side)}°{deg.side !== 0 && ` ${sideWord(deg.side)}`}
                   </span>
+                  {snap.distanceCm !== null && <span className={`chip ${snap.tooClose ? 'text-alert-ink' : ''}`}>Jarak ±{snap.distanceCm} cm</span>}
                 </div>
               )}
             </div>
@@ -555,6 +582,7 @@ export default function Workspace() {
                       onStop={stopCamera}
                       calibrated={calibrated}
                       calibrate={mon.calibrate}
+                      checkSetup={mon.checkSetup}
                       previewElsewhere={pip !== null}
                       view={view}
                       onViewChange={(cameraView) => changeCamera({ cameraView })}
@@ -638,6 +666,18 @@ export default function Workspace() {
                       Coba dengar
                     </button>
                   </div>
+                  <div>
+                    <Switch
+                      checked={prefs.voice}
+                      onChange={(voice) => update({ voice })}
+                      label="Suara pengingat"
+                      description="Ngasih tahu kalau kamu bungkuk atau miring, pas jeda datang, dan mandu tiap gerakan."
+                    />
+                    <button type="button" className="btn btn-ghost btn-sm mt-1 -ml-3" onClick={() => speak(SAY.back)}>
+                      <IconVolume className="size-4" />
+                      Coba dengar
+                    </button>
+                  </div>
                   <div className="grid grid-cols-2 gap-2 border-t border-rule pt-5">
                     <button type="button" className="btn btn-sm" disabled={routine !== null} onClick={() => setRoutine('eye')}>
                       <IconEye className="size-4" />
@@ -646,6 +686,10 @@ export default function Workspace() {
                     <button type="button" className="btn btn-sm" disabled={routine !== null} onClick={() => setRoutine('reset')}>
                       <IconStretch className="size-4" />
                       Stretching
+                    </button>
+                    <button type="button" className="btn btn-sm col-span-2" disabled={routine !== null} onClick={() => setRoutine('train')}>
+                      <IconPosture className="size-4" />
+                      Latihan postur 2 menit
                     </button>
                   </div>
                   <div className="rounded-xl bg-surface p-4 text-[13px] text-muted">
@@ -656,6 +700,9 @@ export default function Workspace() {
                       </li>
                       <li>
                         <kbd className="kbd">E</kbd> istirahat mata
+                      </li>
+                      <li>
+                        <kbd className="kbd">L</kbd> latihan postur
                       </li>
                       <li>
                         <kbd className="kbd">M</kbd> jendela kecil
@@ -714,7 +761,7 @@ export default function Workspace() {
               {tab === 'settings' && (
                 <>
                   <Field label="Figur">
-                    <FigurePicker value={prefs.figure} onChange={(figure) => update({ figure })} />
+                    <CastPicker value={prefs.figure} onChange={(figure) => update({ figure })} />
                   </Field>
                   <div className="space-y-4 rounded-xl bg-surface p-4">
                     <p className="text-pretty">

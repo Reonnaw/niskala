@@ -4,7 +4,8 @@ import { useState, type ComponentType, type SVGProps } from 'react';
 import { hhmm, parseHhmm } from '@/lib/format';
 import { prefsStore, type Mode, type Prefs } from '@/lib/store';
 import { IconArrowRight, IconCamera, IconCheck, IconMoon, IconSliders, IconTimer } from './icons';
-import PostureFigure, { FigurePicker, FrontFigure } from './posture-figure';
+import { CastPicker } from './cast';
+import PostureFigure, { FrontFigure } from './posture-figure';
 import { Segmented, Switch } from './ui-client';
 
 const MODES: { value: Mode; title: string; body: string; icon: ComponentType<SVGProps<SVGSVGElement>>; tag?: string }[] = [
@@ -36,7 +37,7 @@ export default function Onboarding({ prefs }: { prefs: Prefs }) {
         </div>
         <div className="card absolute bottom-4 left-4 flex items-center gap-4 py-2 pr-2 pl-4">
           <span className="text-sm font-semibold">Pilih figurmu</span>
-          <FigurePicker value={draft.figure} onChange={(figure) => set({ figure })} size="size-10" />
+          <CastPicker value={draft.figure} onChange={(figure) => set({ figure })} size="size-10" />
         </div>
         <div className="card absolute top-4 right-4 w-[30%] p-1.5">
           <div className="relative aspect-[560/760] rounded-xl bg-surface">

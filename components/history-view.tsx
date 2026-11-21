@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { useState, useSyncExternalStore } from 'react';
 import { minutes } from '@/lib/format';
-import { byDay, totals, type Day } from '@/lib/insights';
-import { exportData, sessionsStore } from '@/lib/store';
+import { weekSummary, type Week } from '@/lib/coach';
+import { GOAL, byDay, dayKey, dayScore, streak, totals, type Day } from '@/lib/insights';
+import { coachStore, exportData, sessionsStore } from '@/lib/store';
 import { toast } from '@/lib/toast';
-import { IconArrowRight, IconDownload, IconEye, IconHistory, IconMoon, IconPosture, IconStretch, IconTimer } from './icons';
+import { IconArrowRight, IconCheck, IconDownload, IconEye, IconGauge, IconHistory, IconMoon, IconPosture, IconStretch, IconTimer } from './icons';
 import { Stat } from './ui';
 import { Segmented } from './ui-client';
 
@@ -55,8 +56,13 @@ function Chart({ days }: { days: Day[] }) {
             {days.map((d) => {
               const h = (d.active_s / max) * 100;
               const lean = d.active_s ? (d.slouch_s / d.active_s) * 100 : 0;
+              const score = dayScore(d);
               return (
-                <li key={d.key} className="group flex h-full flex-1 flex-col justify-end" title={`${dayLabel(d.date)}: ${minutes(d.active_s)}, ${pct(d.slouch_s, d.active_s)}% bungkuk`}>
+                <li
+                  key={d.key}
+                  className="group flex h-full flex-1 flex-col justify-end"
+                  title={`${dayLabel(d.date)}: ${minutes(d.active_s)}, ${pct(d.slouch_s, d.active_s)}% bungkuk${score === null ? '' : `, skor ${score}`}`}
+                >
                   <div className="flex flex-col overflow-hidden rounded-t-md transition-opacity group-hover:opacity-80" style={{ height: `${h}%` }}>
                     <div className="flex-1 bg-accent" />
                     <div className="bg-alert" style={{ height: `${lean}%` }} />
@@ -97,6 +103,65 @@ function Chart({ days }: { days: Day[] }) {
   );
 }
 
+function CoachCard({ week, today }: { week: Week; today: string }) {
+  const saved = useSyncExternalStore(coachStore.subscribe, coachStore.get, coachStore.server);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const enough = week.trackedMin >= 30;
+
+  async function ask() {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch('/api/coach', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(week) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Coach lagi nggak bisa dihubungi.');
+      coachStore.set({ day: today, coach: data });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const coach = saved?.coach;
+  return (
+    <section className="card space-y-5 p-5 sm:p-6" aria-live="polite">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h2 className="text-xl">{coach ? coach.headline : 'Coach minggu ini'}</h2>
+        <button type="button" className={coach ? 'btn btn-sm' : 'btn btn-primary btn-sm'} onClick={ask} disabled={busy || !enough}>
+          {busy ? 'Coach lagi mikir…' : coach ? 'Minta saran baru' : 'Minta saran coach'}
+        </button>
+      </div>
+      {coach ? (
+        <ol className="grid gap-3 md:grid-cols-3">
+          {coach.tips.map((t, i) => (
+            <li key={t.title} className="rounded-xl bg-surface p-4">
+              <p className="font-semibold">
+                {i + 1}. {t.title}
+              </p>
+              <p className="mt-1.5 text-sm text-muted text-pretty">{t.body}</p>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="max-w-2xl text-muted text-pretty">
+          {enough
+            ? 'Gemini baca ringkasan 7 hari terakhirmu dan ngasih tiga saran yang pas buat kebiasaanmu.'
+            : 'Kumpulin minimal 30 menit yang dicek kamera atau demo minggu ini, terus minta saran di sini.'}
+        </p>
+      )}
+      {error && <p className="text-sm text-alert-ink">{error}</p>}
+      <details className="text-sm text-muted">
+        <summary className="cursor-pointer">
+          Yang dikirim cuma angka ringkasan yang dibulatkan{saved && saved.day !== today ? `. Saran di atas dari ${saved.day}` : ''}.
+        </summary>
+        <pre className="mt-2 overflow-x-auto rounded-xl bg-surface p-3 text-[12px] leading-relaxed">{JSON.stringify(week, null, 2)}</pre>
+      </details>
+    </section>
+  );
+}
+
 export default function HistoryView() {
   const sessions = useSyncExternalStore(sessionsStore.subscribe, sessionsStore.get, sessionsStore.server);
   const hydrated = useSyncExternalStore(noop, () => true, () => false);
@@ -107,6 +172,11 @@ export default function HistoryView() {
   const days = byDay(sessions, range, new Date());
   const t = totals(days);
   const active = days.filter((d) => d.active_s >= 600);
+  const scores = days.map(dayScore).filter((s) => s !== null);
+  const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+  // The streak may reach further back than the range on screen.
+  const recent = byDay(sessions, 60, new Date());
+  const run = streak(recent);
   const best = active.length > 1 ? active.reduce((a, b) => (b.slouch_s / b.active_s < a.slouch_s / a.active_s ? b : a)) : null;
 
   return (
@@ -137,15 +207,19 @@ export default function HistoryView() {
       ) : (
         <>
           <div className="card grid gap-x-8 px-5 py-1 md:grid-cols-2 [&>*]:border-b [&>*]:border-rule md:[&>*:nth-last-child(-n+2)]:border-b-0 [&>*:last-child]:border-b-0">
+            <Stat icon={IconGauge} label="Skor rata-rata" value={avgScore === null ? 'Belum ada' : String(avgScore)} detail={`target ${GOAL}, dari ${scores.length} hari`} />
+            <Stat icon={IconCheck} hue="hue-daun" label="Hari beruntun" value={`${run} hari`} detail={`skor ${GOAL} ke atas`} />
             <Stat icon={IconTimer} hue="hue-kunyit" label="Waktu di layar" value={minutes(t.active_s)} detail={`dalam ${t.activeDays} hari`} />
             <Stat icon={IconPosture} label="Bungkuk atau miring" value={`${Math.round(t.leanShare * 100)}%`} detail={minutes(t.slouch_s)} tone={t.leanShare > 0.25 ? 'alert' : undefined} />
             <Stat icon={IconStretch} hue="hue-mengkudu" label="Jeda diambil" value={String(t.resets + t.eye_breaks)} detail={`${t.resets} stretching, ${t.eye_breaks} mata`} />
             <Stat icon={IconEye} hue="hue-daun" label="Rata-rata kedip" value={t.blink === null ? 'Belum ada' : `${Math.round(t.blink)}/mnt`} />
             <Stat icon={IconMoon} hue="hue-ungu" label="Lewat jam tidur" value={minutes(t.late_s)} />
-            <Stat icon={IconHistory} label="Disimpan di" value="browser ini" detail="nggak dikirim" />
+            <Stat icon={IconHistory} label="Disimpan di" value="browser ini" detail="coach cuma dapat ringkasan" />
           </div>
 
           <Chart days={days} />
+
+          <CoachCard week={weekSummary(recent.slice(-7), run)} today={dayKey(new Date())} />
 
           {best && (
             <div className="card flex items-center gap-4 p-5">

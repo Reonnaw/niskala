@@ -5,10 +5,13 @@ import {
   driftOf,
   glowFrom,
   makeBaseline,
+  makeProfileBaseline,
   nightState,
   postureFrom,
   postureFromProfile,
   profileAngles,
+  screenDistanceCm,
+  setupReport,
   stepStrain,
 } from './signals.ts';
 
@@ -80,7 +83,7 @@ test('night stages follow bedtime and wrap past midnight', () => {
 test('side camera angles are zero when upright and positive when forward, on either side', () => {
   const upright = profileAngles({ x: 300, y: 100 }, { x: 300, y: 250 }, { x: 300, y: 450 }, { x: 340, y: 110 });
   assert.equal(Math.round(upright.neck), 0);
-  assert.equal(Math.round(upright.trunk), 0);
+  assert.equal(Math.round(upright.trunk!), 0);
   // Facing right: ear 60 px ahead of the shoulder over 150 px of height is about 22 degrees.
   const right = profileAngles({ x: 360, y: 100 }, { x: 300, y: 250 }, { x: 300, y: 450 }, { x: 400, y: 110 });
   assert.equal(Math.round(right.neck), 22);
@@ -88,7 +91,7 @@ test('side camera angles are zero when upright and positive when forward, on eit
   const left = profileAngles({ x: 240, y: 100 }, { x: 300, y: 250 }, { x: 300, y: 450 }, { x: 200, y: 110 });
   assert.equal(Math.round(left.neck), 22);
   const slouch = profileAngles({ x: 380, y: 120 }, { x: 350, y: 260 }, { x: 300, y: 450 }, { x: 420, y: 130 });
-  assert.ok(slouch.trunk > 10, `trunk ${slouch.trunk}`);
+  assert.ok(slouch.trunk! > 10, `trunk ${slouch.trunk}`);
 });
 
 test('side camera posture is relative to calibration and leaves sideways axes at zero', () => {
@@ -97,4 +100,30 @@ test('side camera posture is relative to calibration and leaves sideways axes at
   const p = postureFromProfile({ neck: 36, trunk: 24 }, base);
   assert.equal(p.head, 1);
   assert.equal(p.torso, 1);
+});
+
+test('a hip hidden behind the desk still reads the neck but leaves the back unread', () => {
+  const s = profileAngles({ x: 360, y: 100 }, { x: 300, y: 250 }, null, { x: 400, y: 110 });
+  assert.equal(Math.round(s.neck), 22);
+  assert.equal(s.trunk, null);
+  assert.equal(postureFromProfile({ neck: 36, trunk: null }, { neck: 12, trunk: 4 }).torso, 0);
+  // The back gets a baseline only when the hip was in view for at least half the calibration.
+  assert.equal(makeProfileBaseline([{ neck: 10, trunk: null }, { neck: 12, trunk: null }, { neck: 11, trunk: 3 }]).trunk, null);
+  assert.equal(makeProfileBaseline([{ neck: 10, trunk: 2 }, { neck: 12, trunk: 4 }, { neck: 11, trunk: null }]).trunk, 3);
+});
+
+test('desk setup: iris size gives the distance, eye height the screen height, brightness the lighting', () => {
+  // 640 px wide at 65 degrees is a focal length of about 502 px; an 11.7 mm iris 10 px wide is then about 59 cm away.
+  const desk = { w: 640, h: 480, iris: 10, eyeY: 240, face: 0.5, room: 0.4 };
+  assert.equal(Math.round(screenDistanceCm(desk)!), 59);
+  const ok = setupReport([desk, desk, desk]);
+  assert.equal(ok.distanceCm, 59);
+  assert.equal(ok.score, 100);
+  // Too close, eyes high in the frame (screen too low), a dark face in front of a bright window.
+  const bad = setupReport([{ w: 640, h: 480, iris: 16, eyeY: 100, face: 0.15, room: 0.6 }]);
+  assert.deepEqual(
+    bad.checks.filter((c) => !c.ok).map((c) => c.key),
+    ['distance', 'height', 'light', 'backlight'],
+  );
+  assert.equal(bad.score, 0);
 });

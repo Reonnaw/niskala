@@ -331,10 +331,6 @@
   pointer-events: none;
 }
 
-.figure .joint {
-  transition: transform 300ms linear;
-}
-
 .enter {
   transition:
     opacity 0.3s ease,
@@ -361,7 +357,6 @@
   .kawung-turn {
     animation: none;
   }
-  .figure .joint,
   .edge-glow,
   .edge-cue,
   .warm-shift,

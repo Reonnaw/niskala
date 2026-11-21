@@ -1,4 +1,5 @@
 // Pure signal math shared by the camera and simulation paths. No DOM, no I/O.
+import { sideWord } from './format.ts';
 
 export type FaceSample = {
   pitch: number; // head pitch, degrees
@@ -10,6 +11,79 @@ export type FaceSample = {
 };
 
 export type Baseline = { pitch: number; roll: number; iod: number; cx: number; noseY: number };
+
+/** What the front camera can tell about the desk: frame size, iris width and eye height in px, brightness of the face and of the rest, 0..1. */
+export type SetupSample = { w: number; h: number; iris: number; eyeY: number; face: number; room: number };
+
+// Laptop and USB webcams see roughly 60 to 70 degrees across; 65 keeps the estimates within about 15%.
+const CAMERA_HFOV_DEG = 65;
+// The iris is close to 11.7 mm wide in nearly every adult, so it works as a ruler in the image.
+const IRIS_MM = 11.7;
+const focalPx = (w: number) => w / 2 / Math.tan((CAMERA_HFOV_DEG / 2) * (Math.PI / 180));
+
+export const screenDistanceCm = (s: SetupSample) => (s.iris > 0 ? (focalPx(s.w) * IRIS_MM) / s.iris / 10 : null);
+
+/** Degrees the eyes sit above the camera's line of sight. A camera on top of a screen that is too low looks up at you. */
+export const eyeAboveCameraDeg = (s: SetupSample) => (Math.atan2(s.h / 2 - s.eyeY, focalPx(s.w)) * 180) / Math.PI;
+
+export type SetupCheck = { key: 'distance' | 'height' | 'light' | 'backlight'; label: string; ok: boolean; value: string; tip: string };
+
+/** Desk setup from a few seconds of front-camera frames: screen distance and height, and lighting. */
+export function setupReport(samples: SetupSample[]) {
+  const m = (f: (s: SetupSample) => number) => median(samples.map(f));
+  const dists = samples.map(screenDistanceCm).filter((d) => d !== null);
+  const dist = dists.length ? Math.round(median(dists)) : null;
+  const angle = m(eyeAboveCameraDeg);
+  const face = m((s) => s.face);
+  const room = m((s) => s.room);
+  const checks: SetupCheck[] = [
+    dist === null
+      ? { key: 'distance', label: 'Jarak ke layar', ok: true, value: 'nggak kebaca', tip: 'Iris matamu kurang jelas. Coba lagi dengan cahaya dari depan.' }
+      : {
+          key: 'distance',
+          label: 'Jarak ke layar',
+          ok: dist >= 50 && dist <= 80,
+          value: `sekitar ${dist} cm`,
+          tip:
+            dist < 50
+              ? 'Kedeketan. Mundurin kursi atau dorong layar sampai sekitar satu lengan, 50 sampai 75 cm.'
+              : dist > 80
+                ? 'Kejauhan, mata jadi kerja keras baca tulisan. Dekatin sampai sekitar satu lengan, atau gedein tulisannya.'
+                : 'Pas, sekitar satu lengan.',
+        },
+    {
+      key: 'height',
+      label: 'Tinggi layar',
+      ok: angle <= 10 && angle >= -10,
+      value: angle > 10 ? 'kerendahan' : angle < -10 ? 'ketinggian' : 'pas',
+      tip:
+        angle > 10
+          ? 'Kamera ngelihat kamu dari bawah, jadi kepalamu nunduk. Naikin layar pakai stand atau tumpukan buku sampai bagian atasnya setinggi mata.'
+          : angle < -10
+            ? 'Layarnya ketinggian, kepalamu jadi mendongak. Turunin sampai bagian atasnya setinggi mata.'
+            : 'Bagian atas layar kira-kira setinggi mata.',
+    },
+    {
+      key: 'light',
+      label: 'Cahaya di wajah',
+      ok: face >= 0.25,
+      value: `${Math.round(face * 100)}%`,
+      tip: face < 0.25 ? 'Wajahmu kegelapan, layar jadi terasa silau. Nyalain lampu, paling bagus dari samping.' : 'Cukup terang.',
+    },
+    {
+      key: 'backlight',
+      label: 'Cahaya dari belakang',
+      ok: room - face <= 0.2,
+      value: room - face > 0.2 ? 'ada' : 'nggak ada',
+      tip:
+        room - face > 0.2
+          ? 'Ada yang lebih terang di belakangmu, mungkin jendela. Putar meja biar cahayanya dari samping.'
+          : 'Nggak ada silau dari belakang.',
+    },
+  ];
+  return { distanceCm: dist, checks, score: Math.round((100 * checks.filter((c) => c.ok).length) / checks.length) };
+}
+export type SetupReport = ReturnType<typeof setupReport>;
 
 // head/torso: 0 = calibrated upright pose, 1 = the figure's forward limit.
 // side/tilt: -1..1, positive toward the user's right (the right of a mirror image).
@@ -44,35 +118,45 @@ export function makeBaseline(samples: FaceSample[]): Baseline {
 /** Side-camera sample, in degrees: 0 = vertical, positive = toward the screen the user faces. */
 export type ProfileSample = {
   neck: number; // shoulder-to-ear line against vertical (forward head posture)
-  trunk: number; // hip-to-shoulder line against vertical (slouch or lean)
+  trunk: number | null; // hip-to-shoulder line against vertical (slouch or lean); null when a desk hides the hip
 };
 export type ProfileBaseline = ProfileSample;
 type Point = { x: number; y: number };
 
 /** Neck and trunk angles from the body side facing the camera, pixel coordinates with y down. */
-export function profileAngles(ear: Point, shoulder: Point, hip: Point, nose: Point): ProfileSample {
+export function profileAngles(ear: Point, shoulder: Point, hip: Point | null, nose: Point): ProfileSample {
   // Works for a camera on either side: forward is whichever way the nose points from the ear.
   const facing = nose.x >= ear.x ? 1 : -1;
   const deg = (dx: number, dy: number) => (Math.atan2(dx, dy) * 180) / Math.PI;
   return {
     neck: deg(facing * (ear.x - shoulder.x), shoulder.y - ear.y),
-    trunk: deg(facing * (shoulder.x - hip.x), hip.y - shoulder.y),
+    trunk: hip && deg(facing * (shoulder.x - hip.x), hip.y - shoulder.y),
   };
 }
 
-export const makeProfileBaseline = (samples: ProfileSample[]): ProfileBaseline => ({
-  neck: median(samples.map((s) => s.neck)),
-  trunk: median(samples.map((s) => s.trunk)),
-});
+export function makeProfileBaseline(samples: ProfileSample[]): ProfileBaseline {
+  const trunks = samples.map((s) => s.trunk).filter((t) => t !== null);
+  // The back only gets a baseline if the hip was in view for most of the calibration.
+  return { neck: median(samples.map((s) => s.neck)), trunk: trunks.length * 2 >= samples.length ? median(trunks) : null };
+}
 
-/** Side view sees forward lean directly but not sideways lean, so side and tilt stay 0. */
+/** Side view sees forward lean directly but not sideways lean, so side and tilt stay 0. A hidden hip leaves the back unread (0). */
 export function postureFromProfile(s: ProfileSample, b: ProfileBaseline): Posture {
   return {
     head: clamp01((s.neck - b.neck - 3) / 21),
-    torso: clamp01((s.trunk - b.trunk - 2) / 18),
+    torso: s.trunk === null || b.trunk === null ? 0 : clamp01((s.trunk - b.trunk - 2) / 18),
     side: 0,
     tilt: 0,
   };
+}
+
+/** Which way the posture has moved most: forward, sideways, or a head tilt. */
+export function dominant(p: Posture) {
+  const forward = Math.max(p.head, p.torso);
+  const side = Math.abs(p.side);
+  const tilt = Math.abs(p.tilt);
+  if (forward >= side && forward >= tilt) return { kind: 'forward' as const };
+  return side >= tilt ? { kind: 'side' as const, dir: sideWord(p.side) } : { kind: 'tilt' as const, dir: sideWord(p.tilt) };
 }
 
 /** Largest deviation of any axis, 0..1. */
