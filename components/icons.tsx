@@ -82,6 +82,7 @@ export const IconPosture = make(
     <path d="M9.5 8.5v6h6v5.5M9.5 11h5M6 20h11" />
   </>,
 );
+export const IconBreath = make(<path d="M3 8h9a2.5 2.5 0 1 0-2.5-2.5M3 12h14a3 3 0 1 1-3 3M3 16h6" />);
 export const IconStretch = make(<path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v4h-4" />);
 export const IconBell = make(
   <>

@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 // The two Tripo characters from assets/story/story.blend. Each has 17 side frames (upright to fully
 // slouched) and 17 front frames (leaning left to right, mirrored like a webcam), from assets/story/hero.py.
@@ -14,11 +14,21 @@ export type CastId = (typeof CAST)[number]['id'];
 const LAST = 16;
 const src = (who: CastId, view: 'side' | 'front', i: number) => `/cast/${who}/${view}-${String(i).padStart(2, '0')}.webp`;
 const SIZE = { side: [1000, 1000], front: [640, 760] } as const;
+const REDUCE = '(prefers-reduced-motion: reduce)';
+const onMotionChange = (cb: () => void) => {
+  const m = matchMedia(REDUCE);
+  m.addEventListener('change', cb);
+  return () => m.removeEventListener('change', cb);
+};
 
 /** amount: 0..1 of slouch for the side view, -1..1 of lean for the front view. */
 export function CastFrame({ who, view, amount, alt, className = '', eager = false }: { who: CastId; view: 'side' | 'front'; amount: number; alt: string; className?: string; eager?: boolean }) {
   const t = view === 'side' ? amount : (amount + 1) / 2;
   const i = Math.round(Math.min(1, Math.max(0, t)) * LAST);
+
+  // Sitting upright from the side, the figure breathes and reads instead of standing still; the frames take over once it leans.
+  const still = useSyncExternalStore(onMotionChange, () => matchMedia(REDUCE).matches, () => true);
+  const idle = view === 'side' && i === 0 && !still;
 
   // Warm the cache after first paint, so a slider drag swaps between already loaded frames.
   useEffect(() => {
@@ -29,7 +39,17 @@ export function CastFrame({ who, view, amount, alt, className = '', eager = fals
   }, [who, view]);
 
   const [w, h] = SIZE[view];
-  return <Image src={src(who, view, i)} alt={alt} width={w} height={h} unoptimized loading={eager ? 'eager' : 'lazy'} className={`h-full w-full object-contain ${className}`} />;
+  return (
+    <Image
+      src={idle ? `/cast/${who}/side-idle.webp` : src(who, view, i)}
+      alt={alt}
+      width={w}
+      height={h}
+      unoptimized
+      loading={eager ? 'eager' : 'lazy'}
+      className={`h-full w-full object-contain ${className}`}
+    />
+  );
 }
 
 /** Native radios with each character's face, so arrow keys move between them. */

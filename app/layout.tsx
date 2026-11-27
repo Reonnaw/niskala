@@ -10,11 +10,11 @@ import './globals.css';
 const jakarta = Plus_Jakarta_Sans({ variable: '--font-jakarta', subsets: ['latin'] });
 
 const description =
-  'Cek postur (bungkuk atau miring) dan kedipan lewat webcam, semuanya di perangkatmu. Pinggir layar nyala pelan, bukan pop-up. Plus stretching 60 detik, istirahat mata, dan layar hangat menjelang tidur.';
+  'Stres nggak kelihatan, tapi badan dan kebiasaan kerjamu kelihatan. Niskala ngecek postur dan kedipan lewat webcam di perangkatmu, ngajak jeda napas dan stretching, dan nunjukin dari datamu sendiri gimana jeda ngaruh ke stresmu.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: 'Niskala: jaga postur dan mata di depan layar', template: '%s · Niskala' },
+  title: { default: 'Niskala: jaga kesehatan mental lewat badan dan kebiasaan kerja', template: '%s · Niskala' },
   description,
   applicationName: 'Niskala',
   openGraph: { type: 'website', locale: 'id_ID', siteName: 'Niskala', title: 'Niskala', description },

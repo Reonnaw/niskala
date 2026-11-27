@@ -4,7 +4,7 @@ import SiteFooter from '@/components/site-footer';
 
 export const metadata: Metadata = {
   title: 'Riwayat',
-  description: 'Waktu di layar, postur, dan jeda selama beberapa minggu terakhir, dari data yang kesimpan di browsermu.',
+  description: 'Waktu di layar, postur, jeda, dan stres selama beberapa minggu terakhir, dari data yang kesimpan di browsermu.',
 };
 
 export default function HistoryPage() {

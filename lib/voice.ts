@@ -18,6 +18,7 @@ export const SAY = {
     eye: 'Istirahat mata selesai. Lanjut kerja lagi.',
     reset: 'Stretching selesai. Badan udah lebih enteng.',
     train: 'Latihan postur selesai.',
+    breath: 'Jeda napas selesai. Pelan-pelan balik kerja, ya.',
     great: 'Latihan selesai. Mantap, kamu tegak hampir sepanjang latihan.',
     fair: 'Latihan selesai. Lumayan, lebih dari separuh waktu kamu tegak.',
     low: 'Latihan selesai. Masih sering geser, coba lagi nanti pelan-pelan.',

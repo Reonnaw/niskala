@@ -65,6 +65,10 @@ export type Snapshot = {
   tooClose: boolean;
   /** Seconds the user was away, set only on the tick they come back. */
   returnedAfter: number | null;
+  /** Seconds left in the running focus block, or null with none running. */
+  focusLeftS: number | null;
+  /** True only on the tick a focus block ends. */
+  focusDone: boolean;
 };
 
 const TICK_MS = 250;
@@ -107,9 +111,12 @@ const INITIAL: Snapshot = {
   distanceCm: null,
   tooClose: false,
   returnedAfter: null,
+  focusLeftS: null,
+  focusDone: false,
 };
 
 const pad = (n: number) => String(n).padStart(2, '0');
+const COUNTER = { eye: 'eye_breaks', reset: 'resets', train: 'trainings', breath: 'breaths' } as const;
 
 export function useMonitor({ mode, cameraOn, sim, prefs, routine, timerWindow }: {
   mode: Mode;
@@ -143,6 +150,7 @@ export function useMonitor({ mode, cameraOn, sim, prefs, routine, timerWindow }:
     rateT: 0,
     sinceEye: 0,
     sinceReset: 0,
+    focusLeft: null as number | null,
     forced: null as BreakKind | null,
     lastCue: null as BreakKind | null,
     chimed: false,
@@ -261,6 +269,15 @@ export function useMonitor({ mode, cameraOn, sim, prefs, routine, timerWindow }:
     if (watched && !routine && !away) {
       m.sinceEye += dt;
       m.sinceReset += dt;
+      if (m.focusLeft !== null) m.focusLeft -= dt;
+    }
+    const focusDone = m.focusLeft !== null && m.focusLeft <= 0;
+    if (focusDone) {
+      m.focusLeft = null;
+      if (m.session) m.session.focus++;
+      m.savedAt = -Infinity;
+      // A finished block ends on the stretch, so the cue below fires on this same tick.
+      m.forced = 'reset';
     }
     const eyeDue = m.forced === 'eye' || (prefs.eyeMin > 0 && m.sinceEye >= prefs.eyeMin * 60);
     const resetDue = m.forced === 'reset' || (prefs.resetMin > 0 && m.sinceReset >= prefs.resetMin * 60);
@@ -326,6 +343,8 @@ export function useMonitor({ mode, cameraOn, sim, prefs, routine, timerWindow }:
       distanceCm: m.distance === null ? null : Math.round(m.distance),
       tooClose: m.closeFor > CLOSE_AFTER_S,
       returnedAfter,
+      focusLeftS: m.focusLeft === null ? null : Math.max(0, m.focusLeft),
+      focusDone,
     });
   });
 
@@ -339,6 +358,8 @@ export function useMonitor({ mode, cameraOn, sim, prefs, routine, timerWindow }:
       resets: 0,
       eye_breaks: 0,
       trainings: 0,
+      breaths: 0,
+      focus: 0,
       slouch_s: 0,
       low_blink_s: 0,
       late_s: 0,
@@ -427,13 +448,16 @@ export function useMonitor({ mode, cameraOn, sim, prefs, routine, timerWindow }:
     const m = model.current;
     // Save on the next tick, so today's missions tick off right away instead of up to 15 s later.
     m.savedAt = -Infinity;
-    if (m.session) m.session[kind === 'train' ? 'trainings' : kind === 'reset' ? 'resets' : 'eye_breaks']++;
+    if (m.session) m.session[COUNTER[kind]]++;
+    // The breathing pause is for the mind, so the posture and eye timers carry on.
+    if (kind === 'breath') return;
     // Training is extra practice, not a scheduled break: it clears the posture strain and nothing else.
     if (kind === 'train') {
       m.postureStrain = 0;
       return;
     }
-    m.forced = null;
+    // An eye break does not cover a stretch that is still owed.
+    if (kind === 'reset' || m.forced === 'eye') m.forced = null;
     m.sinceEye = 0;
     m.eyeStrain = 0;
     if (kind === 'reset') {
@@ -458,10 +482,15 @@ export function useMonitor({ mode, cameraOn, sim, prefs, routine, timerWindow }:
     model.current.forced = kind;
   }, []);
 
+  /** Starts a focus block of `seconds`, ends the running one at once with 0, or drops it with null. */
+  const setFocus = useCallback((seconds: number | null) => {
+    model.current.focusLeft = seconds;
+  }, []);
+
   // Used before wiping local data, so the pagehide save does not write this session back.
   const discardSession = useCallback(() => {
     model.current.session = null;
   }, []);
 
-  return { snap, calibrated, sync, onSample, calibrate, checkSetup, completeRoutine, snooze, triggerCue, discardSession };
+  return { snap, calibrated, sync, onSample, calibrate, checkSetup, completeRoutine, snooze, triggerCue, setFocus, discardSession };
 }

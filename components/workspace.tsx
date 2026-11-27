@@ -7,8 +7,8 @@ import { duration, hhmm, minutes, parseHhmm, sideWord } from '@/lib/format';
 import { ROUTINES } from '@/lib/routines';
 import { SENSITIVITY, dominant, driftOf, glowFrom, type Posture, type Sensitivity } from '@/lib/signals';
 import { chime } from '@/lib/sound';
-import { byDay, dayScore, missions, streak, type Mission, type MissionId } from '@/lib/insights';
-import { checkinsStore, clearAll, exportData, prefsStore, saveCheckin, sessionsStore, type CameraView, type Checkin, type Mode, type Prefs, type Warmth } from '@/lib/store';
+import { WHO5_LOW, byDay, dayScore, missions, streak, who5DueOn, who5Score, type Mission, type MissionId } from '@/lib/insights';
+import { checkinsStore, clearAll, exportData, prefsStore, saveCheckin, saveWho5, sessionsStore, who5Store, type CameraView, type Checkin, type Mode, type Prefs, type Warmth, type Who5 } from '@/lib/store';
 import { syncConfigured } from '@/lib/sync';
 import { allowNotifications, canNotify } from '@/lib/notify';
 import { toast } from '@/lib/toast';
@@ -18,6 +18,7 @@ import { SAY, doneLine, hush, speak } from '@/lib/voice';
 import CameraPanel, { type Camera } from './camera-panel';
 import {
   IconBell,
+  IconBreath,
   IconCamera,
   IconCheck,
   IconDownload,
@@ -28,9 +29,11 @@ import {
   IconLean,
   IconMoon,
   IconPip,
+  IconPlay,
   IconPosture,
   IconRefresh,
   IconSliders,
+  IconStop,
   IconStretch,
   IconTimer,
   IconTrash,
@@ -109,7 +112,7 @@ function guidance(snap: Snapshot, bedtime: number, checkedIn: boolean) {
   const { stage, minutesToBed } = snap.night;
   if (stage === 'day') return `Layar mulai hangat jam ${hhmm((bedtime + 1440 - 120) % 1440)}, dua jam sebelum jam tidurmu (${hhmm(bedtime)}).`;
   if (stage === 'wind-down')
-    return `${minutesToBed} menit lagi jam tidur. Beresin yang lagi dikerjain, tugas baru simpan buat besok. Catat kamu berhenti di mana biar besok gampang lanjut.${checkedIn ? '' : ' Sebelum udahan, isi cek pegal hari ini.'}`;
+    return `${minutesToBed} menit lagi jam tidur. Beresin yang lagi dikerjain, tugas baru simpan buat besok. Catat kamu berhenti di mana biar besok gampang lanjut.${checkedIn ? '' : ' Sebelum udahan, isi cek pegal dan stres hari ini.'}`;
   const ran = snap.session ? minutes(snap.session.active_s) : '';
   return `Udah ${-minutesToBed} menit lewat jam tidurmu, dan sesi ini jalan ${ran}. Layar terang jam segini bikin susah ngantuk. Simpan kerjaanmu dan berhenti di jeda berikutnya.`;
 }
@@ -191,6 +194,7 @@ function CueBanner({ cue, onStart, onSnooze }: { cue: BreakKind; onStart: () => 
 const MISSION_LOOK: Record<MissionId, [typeof IconEye, string]> = {
   eye: [IconEye, 'hue-daun'],
   reset: [IconStretch, 'hue-mengkudu'],
+  breath: [IconBreath, 'hue-ungu'],
   train: [IconPosture, 'hue-nila'],
   score: [IconGauge, 'hue-nila'],
 };
@@ -204,13 +208,13 @@ function Missions({ list, score, run, busy, onStart }: { list: Mission[]; score:
           {list.filter((m) => m.done).length}/{list.length} beres{run > 0 && ` · ${run} hari beruntun`}
         </span>
       </h2>
-      <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+      <ul className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
         {list.map((m) => {
           const [Icon, hue] = MISSION_LOOK[m.id];
           return (
-            <li key={m.id} className={`flex min-h-12 items-center gap-3 rounded-xl px-3 py-2 ${m.done ? 'hue-daun bg-hue-soft' : 'bg-surface'}`}>
+            <li key={m.id} className={`flex min-h-12 items-center gap-3 rounded-xl px-3 py-2 transition-colors duration-500 ${m.done ? 'hue-daun bg-hue-soft' : 'bg-surface'}`}>
               <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${m.done ? 'bg-daun text-raised' : `${hue} bg-hue-soft text-hue-ink`}`}>
-                {m.done ? <IconCheck className="size-4" /> : <Icon className="size-4" />}
+                {m.done ? <IconCheck className="pop size-4" /> : <Icon className="size-4" />}
               </span>
               <span className="min-w-0 flex-1 text-sm font-medium">{m.label}</span>
               {m.done ? (
@@ -235,37 +239,52 @@ function Missions({ list, score, run, busy, onStart }: { list: Mission[]; score:
   );
 }
 
-const PAIN_AREAS = [
-  { key: 'neck', label: 'Leher & bahu' },
-  { key: 'back', label: 'Punggung' },
-  { key: 'eyes', label: 'Mata' },
+const painWord = (v: number) => (v === 0 ? 'nggak pegal' : v <= 3 ? 'dikit' : v <= 6 ? 'lumayan' : v <= 8 ? 'pegal' : 'pegal banget');
+const stressWord = (v: number) => (v === 0 ? 'santai' : v <= 3 ? 'dikit' : v <= 6 ? 'lumayan' : v <= 8 ? 'tinggi' : 'berat banget');
+
+const CHECKIN_ROWS = [
+  { key: 'neck', label: 'Leher & bahu', word: painWord },
+  { key: 'back', label: 'Punggung', word: painWord },
+  { key: 'eyes', label: 'Mata', word: painWord },
+  { key: 'stress', label: 'Stres', word: stressWord },
 ] as const;
 
-const painWord = (v: number) => (v === 0 ? 'nggak pegal' : v <= 3 ? 'dikit' : v <= 6 ? 'lumayan' : v <= 8 ? 'pegal' : 'pegal banget');
-
-/** Once a day, how sore you feel. Riwayat sets it against the score, so better posture can show up as less pain. */
+/**
+ * Once a day, how sore and how stressed you feel. Riwayat sets pain against the score and stress against the breaks
+ * taken, so the effect shows up in how you feel, not only in minutes.
+ */
 function CheckinCard({ day, saved, evening }: { day: string; saved: Checkin | undefined; evening: boolean }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<Checkin>(saved ?? { day, neck: 0, back: 0, eyes: 0 });
+  const [draft, setDraft] = useState<Checkin>(saved ?? { day, neck: 0, back: 0, eyes: 0, stress: 0 });
 
-  if (saved && !editing) {
+  // One line until opened, like the weekly card, so the column stays short; in the evening it only lights up.
+  if (!editing) {
     return (
-      <section aria-labelledby="checkin-title" className="card flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+      <section aria-labelledby="checkin-title" className={`card flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 ${evening && !saved ? 'ring-2 ring-cue/40' : ''}`}>
         <h2 id="checkin-title" className="text-base">
-          Cek pegal hari ini
+          Cek pegal dan stres hari ini
         </h2>
         <p className="text-sm text-muted tabular-nums">
-          leher {saved.neck} · punggung {saved.back} · mata {saved.eyes}
+          {saved ? (
+            <>
+              leher {saved.neck} · punggung {saved.back} · mata {saved.eyes}
+              {saved.stress !== undefined && ` · stres ${saved.stress}`}
+            </>
+          ) : evening ? (
+            'pas banget diisi sekarang'
+          ) : (
+            'paling pas diisi pas udahan kerja'
+          )}
         </p>
         <button
           type="button"
-          className="btn btn-ghost btn-sm ml-auto"
+          className={`btn btn-sm ml-auto ${saved ? 'btn-ghost' : ''}`}
           onClick={() => {
-            setDraft(saved);
+            if (saved) setDraft({ stress: 0, ...saved });
             setEditing(true);
           }}
         >
-          Ubah
+          {saved ? 'Ubah' : 'Isi'}
         </button>
       </section>
     );
@@ -274,17 +293,17 @@ function CheckinCard({ day, saved, evening }: { day: string; saved: Checkin | un
   return (
     <section aria-labelledby="checkin-title" className={`card p-4 transition-shadow ${evening ? 'ring-2 ring-cue/40' : ''}`}>
       <h2 id="checkin-title" className="flex flex-wrap items-baseline gap-x-2 text-base">
-        Cek pegal hari ini
+        Cek pegal dan stres hari ini
         <span className="text-sm font-normal text-muted">{evening ? 'pas banget diisi sekarang' : 'paling pas diisi pas udahan kerja'}</span>
       </h2>
-      <div className="mt-3 space-y-3">
-        {PAIN_AREAS.map((a) => {
-          const v = draft[a.key];
+      <div className="@container mt-3 space-y-3">
+        {CHECKIN_ROWS.map((a) => {
+          const v = draft[a.key] ?? 0;
           return (
-            <label key={a.key} className="grid grid-cols-[1fr_auto] items-center gap-x-3 text-sm sm:grid-cols-[7.5rem_1fr_7rem]">
+            <label key={a.key} className="grid grid-cols-[1fr_auto] items-center gap-x-3 text-sm @sm:grid-cols-[7.5rem_1fr_7rem]">
               <span className="font-medium">{a.label}</span>
-              <span className="text-right text-muted tabular-nums sm:order-last sm:text-left">
-                <span className="font-bold text-ink">{v}</span> · {painWord(v)}
+              <span className="text-right text-muted tabular-nums @sm:order-last @sm:text-left">
+                <span className="font-bold text-ink">{v}</span> · {a.word(v)}
               </span>
               <input
                 type="range"
@@ -293,19 +312,17 @@ function CheckinCard({ day, saved, evening }: { day: string; saved: Checkin | un
                 step={1}
                 value={v}
                 onChange={(e) => setDraft({ ...draft, [a.key]: Number(e.target.value) })}
-                aria-valuetext={`${v} dari 10, ${painWord(v)}`}
-                className="range col-span-2 sm:col-span-1"
+                aria-valuetext={`${v} dari 10, ${a.word(v)}`}
+                className="range col-span-2 @sm:col-span-1"
               />
             </label>
           );
         })}
       </div>
       <div className="mt-4 flex justify-end gap-2">
-        {saved && (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>
-            Batal
-          </button>
-        )}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>
+          {saved ? 'Batal' : 'Nanti aja'}
+        </button>
         <button
           type="button"
           className="btn btn-sm"
@@ -322,6 +339,122 @@ function CheckinCard({ day, saved, evening }: { day: string; saved: Checkin | un
   );
 }
 
+// WHO-5 Well-Being Index, close to the official Indonesian wording, addressed with "kamu" like the rest of the app.
+const WHO5_ITEMS = [
+  'Kamu merasa ceria dan semangat',
+  'Kamu merasa tenang dan santai',
+  'Kamu merasa aktif dan bertenaga',
+  'Kamu bangun tidur dengan badan segar dan cukup istirahat',
+  'Hari-harimu diisi hal-hal yang menarik buatmu',
+];
+const WHO5_OPTIONS = [
+  { value: 5, label: 'Selalu' },
+  { value: 4, label: 'Hampir selalu' },
+  { value: 3, label: 'Lebih dari separuh waktu' },
+  { value: 2, label: 'Kurang dari separuh waktu' },
+  { value: 1, label: 'Sesekali' },
+  { value: 0, label: 'Nggak pernah' },
+];
+const shortDate = (key: string) => {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+};
+
+/** Where to talk to someone when the week was heavy. Plain words, no labels for how anyone feels. */
+function Healing119() {
+  return (
+    <div className="hue-ungu mt-3 flex gap-3 rounded-xl bg-hue-soft p-4 text-sm text-pretty">
+      <IconInfo className="mt-0.5 size-4 shrink-0 text-hue-ink" />
+      <p>
+        Minggu-minggu kayak gini bisa berat, dan kamu nggak harus nanggung sendirian. Cerita ke orang yang kamu percaya, atau ngobrol
+        sama Healing119 dari Kemenkes:{' '}
+        <a href="tel:119" className="link font-semibold">
+          telepon 119
+        </a>
+        , terus pilih ekstensi 8. Gratis, 24 jam. Bisa juga chat lewat{' '}
+        <a href="https://healing119.id" target="_blank" rel="noreferrer" className="link font-semibold">
+          healing119.id
+        </a>
+        .
+      </p>
+    </div>
+  );
+}
+
+/** WHO-5 once a week: five questions about the last two weeks, kept in this browser like the check-ins. */
+function Who5Card({ today, list }: { today: string; list: Who5[] }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState(() => WHO5_ITEMS.map(() => -1));
+  const last = list.reduce<Who5 | null>((a, w) => (a === null || w.day > a.day ? w : a), null);
+  const score = last && who5Score(last);
+  const dueOn = who5DueOn(list, today);
+  const help = score !== null && score < WHO5_LOW && <Healing119 />;
+
+  if (!open) {
+    return (
+      <section aria-labelledby="who5-title" className="card px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h2 id="who5-title" className="text-base">
+            Kabar mingguan
+          </h2>
+          <p className="text-sm text-muted tabular-nums">
+            {score !== null && `${score}/100 · `}
+            {dueOn <= today ? '5 pertanyaan, sekitar semenit' : `isi lagi ${shortDate(dueOn)}`}
+          </p>
+          {dueOn <= today && (
+            <button type="button" className="btn btn-sm ml-auto" onClick={() => setOpen(true)}>
+              Isi
+            </button>
+          )}
+        </div>
+        {help}
+      </section>
+    );
+  }
+
+  return (
+    <section aria-labelledby="who5-title" className="card p-4">
+      <h2 id="who5-title" className="flex flex-wrap items-baseline gap-x-2 text-base">
+        Kabar mingguan
+        <span className="text-sm font-normal text-muted">dua minggu terakhir, seberapa sering…</span>
+      </h2>
+      <ol className="@container mt-3 space-y-4">
+        {WHO5_ITEMS.map((q, i) => (
+          <li key={q}>
+            <p className="mb-1.5 text-sm font-medium">{q}</p>
+            <Segmented<number>
+              label={q}
+              size="sm"
+              // A grid keeps six answers in tidy rows on a phone or in a narrow column, in the scale's order.
+              className="grid grid-cols-2 @sm:grid-cols-3 [&>*]:justify-center [&>*]:text-center"
+              value={items[i]}
+              onChange={(v) => setItems(items.map((x, j) => (j === i ? v : x)))}
+              options={WHO5_OPTIONS}
+            />
+          </li>
+        ))}
+      </ol>
+      <div className="mt-4 flex justify-end gap-2">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>
+          Nanti aja
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={items.includes(-1)}
+          onClick={() => {
+            saveWho5({ day: today, items });
+            setOpen(false);
+            toast('Kesimpan. Cuma ada di browser ini.');
+          }}
+        >
+          Simpan
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export default function Workspace() {
   const prefs = useSyncExternalStore(prefsStore.subscribe, prefsStore.get, prefsStore.server);
   const hydrated = useSyncExternalStore(noop, () => true, () => false);
@@ -329,6 +462,7 @@ export default function Workspace() {
   const notifySupported = useSyncExternalStore(noop, canNotify, () => false);
   const sessions = useSyncExternalStore(sessionsStore.subscribe, sessionsStore.get, sessionsStore.server);
   const checkins = useSyncExternalStore(checkinsStore.subscribe, checkinsStore.get, checkinsStore.server);
+  const who5 = useSyncExternalStore(who5Store.subscribe, who5Store.get, who5Store.server);
   const [sim, setSim] = useState<Sim>({ head: 0, torso: 0, side: 0, tilt: 0, blink: 16, late: false });
   const [routine, setRoutine] = useState<Routine | null>(null);
   const [camera, setCamera] = useState<Camera>({ state: 'off' });
@@ -421,11 +555,15 @@ export default function Workspace() {
   function stopRoutine() {
     if (!routine) return;
     hush();
-    if (routine !== 'train') {
+    if (routine === 'eye' || routine === 'reset') {
       mon.snooze(routine);
       toast('Jeda distop. Diingetin lagi 5 menit lagi.', 'info');
     }
     setRoutine(null);
+  }
+
+  function toggleFocus() {
+    mon.setFocus(snap.focusLeftS === null ? prefs.focusMin * 60 : null);
   }
 
   function snooze(kind: BreakKind) {
@@ -460,6 +598,10 @@ export default function Workspace() {
     toast(`Selamat datang lagi. ${minutes(t)} tadi dihitung ${t >= 300 ? 'stretching' : 'istirahat mata'}.`);
   }, [snap.returnedAfter]);
 
+  useEffect(() => {
+    if (snap.focusDone) toast('Blok fokus selesai. Stretching 60 detik dulu, terus lanjut.');
+  }, [snap.focusDone]);
+
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     const typing = e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]');
     if (e.metaKey || e.ctrlKey || e.altKey || typing) return;
@@ -468,7 +610,9 @@ export default function Workspace() {
     else if (e.key === 'r') setRoutine('reset');
     else if (e.key === 'e') setRoutine('eye');
     else if (e.key === 'l') setRoutine('train');
+    else if (e.key === 'n') setRoutine('breath');
     else if (e.key === 'm') toggleMini();
+    else if (e.key === 'f') toggleFocus();
   });
   useEffect(() => {
     const h = (e: KeyboardEvent) => onKey(e);
@@ -482,6 +626,7 @@ export default function Workspace() {
   const posture = tracked ? snap.posture : null;
   const session = snap.session;
   const next = nextBreak(snap);
+  const focusLeft = snap.focusLeftS === null ? null : `${Math.max(1, Math.ceil(snap.focusLeftS / 60))} mnt`;
   // The current session is saved every 15 s, so today's score follows it closely. The clock is read only
   // after hydration: the prerendered page has no "today".
   const days = hydrated ? byDay(sessions, 60, new Date()) : [];
@@ -501,7 +646,9 @@ export default function Workspace() {
         ? `${snap.postureStrain >= snap.eyeStrain && snap.posture ? postureWord(snap.posture, S.drift) : 'Kedip jarang'} · Niskala`
         : snap.away
           ? 'Lagi pergi · Niskala'
-          : 'Ruang Kerja · Niskala';
+          : focusLeft
+            ? `Fokus ${focusLeft} · Niskala`
+            : 'Ruang Kerja · Niskala';
   // A side camera sees the profile: forward lean only, no sideways lean or blinks.
   const sideOnly = mode === 'camera' && view === 'side';
   const deg = posture && {
@@ -563,9 +710,10 @@ export default function Workspace() {
   return (
     <>
       {overlays}
-      <main className="mx-auto max-w-6xl px-4 pt-6 pb-16 sm:px-8">
+      {/* 65px is the sticky header: 4rem plus its border. */}
+      <main className="mx-auto max-w-6xl px-4 pt-6 pb-16 sm:px-8 xl:max-w-[90rem] desk:flex desk:h-[calc(100dvh-65px)] desk:flex-col desk:py-4">
         <h1 className="sr-only">Ruang kerja Niskala</h1>
-        <div className="card mb-6 flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
+        <div className="card mb-6 flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 desk:mb-4">
           <Badge tone={cameraOn ? 'accent' : 'neutral'} live={cameraOn} icon={cameraOn ? undefined : modeBadge.icon}>
             {modeBadge.text}
           </Badge>
@@ -578,7 +726,18 @@ export default function Workspace() {
             <span className="font-semibold tabular-nums">{next.value}</span>
             <span className="text-muted"> · {next.detail}</span>
           </p>
-          <div className="grid w-full grid-cols-3 gap-2 sm:ml-auto sm:flex sm:w-auto">
+          {(focusLeft || (today?.focus ?? 0) > 0) && (
+            <p className="text-sm">
+              <span className="text-muted">Fokus </span>
+              <span className="font-semibold tabular-nums">{focusLeft ? `${focusLeft} lagi` : `${today!.focus} blok`}</span>
+              {!focusLeft && <span className="text-muted"> hari ini</span>}
+            </p>
+          )}
+          <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto">
+            <button type="button" className="btn btn-sm px-2 sm:px-3" onClick={toggleFocus} aria-pressed={focusLeft !== null}>
+              {focusLeft ? <IconStop className="size-4 max-sm:hidden" /> : <IconPlay className="size-4 max-sm:hidden" />}
+              {focusLeft ? 'Stop fokus' : 'Fokus'}
+            </button>
             <button type="button" className="btn btn-sm px-2 sm:px-3" disabled={routine !== null} onClick={() => setRoutine('reset')}>
               <IconStretch className="size-4 max-sm:hidden" />
               Stretching
@@ -596,10 +755,10 @@ export default function Workspace() {
           </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-8">
-          <section aria-label="Postur langsung" className="min-w-0 space-y-4">
-            <div className="stage card relative overflow-hidden">
-              <div className="mx-auto aspect-[1150/1180] max-h-[52vh] w-full lg:max-h-[60vh]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-x-8 lg:[grid-template-areas:'live_side'_'day_side'] xl:grid-cols-[minmax(0,1fr)_22rem_22rem] xl:gap-x-5 xl:[grid-template-areas:'live_day_side'] desk:min-h-0 desk:flex-1 desk:grid-rows-[minmax(0,1fr)]">
+          <section aria-label="Postur langsung" className="min-w-0 space-y-4 lg:[grid-area:live] desk:flex desk:flex-col desk:overflow-y-auto">
+            <div className="stage card relative overflow-hidden desk:min-h-48 desk:flex-1">
+              <div className="mx-auto aspect-[1150/1180] max-h-[52vh] w-full lg:max-h-[60vh] desk:aspect-auto desk:h-full desk:max-h-none">
                 <PostureFigure posture={posture} who={prefs.figure} />
               </div>
               {posture && (
@@ -607,8 +766,8 @@ export default function Workspace() {
                   <StatePill posture={posture} threshold={S.drift} />
                 </div>
               )}
-              <figure className="card absolute top-3 right-3 w-[30%] max-w-48 min-w-24 p-1.5">
-                <div className="relative aspect-[560/760] rounded-xl bg-surface">
+              <figure className="card absolute top-3 right-3 w-[30%] max-w-48 min-w-24 p-1.5 desk:flex desk:max-h-[calc(100%-1.5rem)] desk:flex-col">
+                <div className="relative aspect-[560/760] rounded-xl bg-surface desk:min-h-0 desk:flex-1">
                   <FrontFigure posture={sideOnly ? null : posture} who={prefs.figure} />
                   {sideOnly && (
                     <p className="absolute inset-0 grid place-items-center rounded-xl bg-raised/85 p-2 text-center text-[11px] leading-snug font-semibold text-muted">
@@ -642,8 +801,9 @@ export default function Workspace() {
             ) : (
               <>
                 {snap.cue && <CueBanner cue={snap.cue} onStart={() => setRoutine(snap.cue)} onSnooze={() => snooze(snap.cue!)} />}
+                {/* Room for two lines on desk, so the figure above keeps its size as the message changes. */}
                 <p
-                  className={`flex gap-2.5 rounded-xl px-4 py-3 text-sm text-pretty transition-colors ${snap.glow > 0 ? 'bg-alert/15 text-alert-ink' : 'bg-surface'}`}
+                  className={`flex gap-2.5 rounded-xl px-4 py-3 text-sm text-pretty transition-colors desk:min-h-16 desk:items-center ${snap.glow > 0 ? 'bg-alert/15 text-alert-ink' : 'bg-surface'}`}
                 >
                   <IconInfo className={`mt-0.5 size-4 shrink-0 ${snap.glow > 0 ? '' : 'text-muted'}`} />
                   {status}
@@ -686,11 +846,15 @@ export default function Workspace() {
                 </div>
               </>
             )}
-            {today && <Missions list={todayMissions} score={dayScore(today)} run={run} busy={routine !== null} onStart={setRoutine} />}
-            {today && <CheckinCard key={today.key} day={today.key} saved={checkedIn} evening={snap.night.stage !== 'day'} />}
           </section>
 
-          <aside className="card self-start overflow-hidden lg:sticky lg:top-20">
+          <section aria-label="Hari ini" className="min-w-0 space-y-4 lg:[grid-area:day] desk:overflow-y-auto">
+            {today && <Missions list={todayMissions} score={dayScore(today)} run={run} busy={routine !== null} onStart={setRoutine} />}
+            {today && <CheckinCard key={`checkin-${today.key}`} day={today.key} saved={checkedIn} evening={snap.night.stage !== 'day'} />}
+            {today && <Who5Card key={`who5-${today.key}`} today={today.key} list={who5} />}
+          </section>
+
+          <aside className="card self-start overflow-hidden lg:sticky lg:top-20 lg:[grid-area:side] desk:flex desk:max-h-full desk:flex-col">
             <Tabs<Tab>
               label="Pengaturan ruang kerja"
               value={tab}
@@ -702,7 +866,7 @@ export default function Workspace() {
                 { value: 'settings', label: 'Setelan', icon: IconGauge },
               ]}
             />
-            <div role="tabpanel" className="space-y-6 p-5">
+            <div role="tabpanel" className="space-y-6 p-5 desk:min-h-0 desk:overflow-y-auto">
               {tab === 'track' && (
                 <>
                   <Segmented<Mode>
@@ -766,6 +930,9 @@ export default function Workspace() {
                         <button type="button" className="btn btn-sm" onClick={() => mon.triggerCue('reset')}>
                           Stretching
                         </button>
+                        <button type="button" className="btn btn-sm" disabled={focusLeft === null} onClick={() => mon.setFocus(0)}>
+                          Fokus selesai
+                        </button>
                       </div>
                     </div>
                   )}
@@ -774,6 +941,17 @@ export default function Workspace() {
 
               {tab === 'breaks' && (
                 <>
+                  <Field label="Blok fokus">
+                    <Segmented<Prefs['focusMin']>
+                      label="Blok fokus"
+                      value={prefs.focusMin}
+                      onChange={(focusMin) => update({ focusMin })}
+                      options={[
+                        { value: 25, label: '25 mnt' },
+                        { value: 50, label: '50 mnt' },
+                      ]}
+                    />
+                  </Field>
                   <Field label="Istirahat mata 20 detik">
                     <Segmented
                       label="Istirahat mata"
@@ -827,9 +1005,13 @@ export default function Workspace() {
                       <IconStretch className="size-4" />
                       Stretching
                     </button>
-                    <button type="button" className="btn btn-sm col-span-2" disabled={routine !== null} onClick={() => setRoutine('train')}>
+                    <button type="button" className="btn btn-sm" disabled={routine !== null} onClick={() => setRoutine('breath')}>
+                      <IconBreath className="size-4" />
+                      Jeda napas
+                    </button>
+                    <button type="button" className="btn btn-sm" disabled={routine !== null} onClick={() => setRoutine('train')}>
                       <IconPosture className="size-4" />
-                      Latihan postur 2 menit
+                      Latihan postur
                     </button>
                   </div>
                   <div className="rounded-xl bg-surface p-4 text-[13px] text-muted">
@@ -843,6 +1025,12 @@ export default function Workspace() {
                       </li>
                       <li>
                         <kbd className="kbd">L</kbd> latihan postur
+                      </li>
+                      <li>
+                        <kbd className="kbd">N</kbd> jeda napas
+                      </li>
+                      <li>
+                        <kbd className="kbd">F</kbd> blok fokus
                       </li>
                       <li>
                         <kbd className="kbd">M</kbd> jendela kecil
@@ -940,8 +1128,8 @@ export default function Workspace() {
                   </Field>
                   <div className="space-y-4 border-t border-rule pt-5">
                     <p className="text-sm text-muted text-pretty">
-                      Yang disimpan di browser ini: setelan, kalibrasi, ringkasan tiap sesi, dan cek pegal. Nggak ada gambar atau data wajah yang
-                      disimpan.
+                      Yang disimpan di browser ini: setelan, kalibrasi, ringkasan tiap sesi, cek pegal dan stres, dan kabar mingguan. Nggak ada
+                      gambar atau data wajah yang disimpan.
                     </p>
                     {syncConfigured && (
                       <div>
@@ -1038,6 +1226,7 @@ export default function Workspace() {
                     <IconTimer className="size-4 shrink-0 text-accent" />
                     <span className="text-muted">
                       {next.value === 'Mati' ? 'Jadwal jeda mati' : `Jeda berikutnya ${next.value}`}
+                      {focusLeft && ` · fokus ${focusLeft}`}
                       {today && ` · misi ${missionsDone}/${todayMissions.length}`}
                     </span>
                     <button type="button" className="btn btn-ghost btn-sm ml-auto" onClick={() => setRoutine('reset')}>

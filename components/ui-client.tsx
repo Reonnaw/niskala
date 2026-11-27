@@ -26,16 +26,17 @@ export function Switch({ checked, onChange, label, description }: {
   );
 }
 
-export function Segmented<T extends string | number>({ label, value, options, onChange, size = 'md' }: {
+export function Segmented<T extends string | number>({ label, value, options, onChange, size = 'md', className = '' }: {
   label: string;
   value: T;
   options: { value: T; label: string; icon?: IconType }[];
   onChange: (v: T) => void;
   size?: 'sm' | 'md';
+  className?: string;
 }) {
   const name = useId();
   return (
-    <div role="radiogroup" aria-label={label} className="seg">
+    <div role="radiogroup" aria-label={label} className={`seg ${className}`}>
       {options.map((o) => (
         <label key={String(o.value)} className={`seg-item ${size === 'sm' ? 'px-2.5 py-1 text-[13px]' : ''}`}>
           <input type="radio" name={name} checked={value === o.value} onChange={() => onChange(o.value)} className="sr-only" />

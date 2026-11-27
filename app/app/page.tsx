@@ -4,7 +4,7 @@ import Workspace from '@/components/workspace';
 
 export const metadata: Metadata = {
   title: 'Ruang Kerja',
-  description: 'Pelacakan postur dan kedipan langsung, pengingat jeda, dan layar hangat menjelang tidur. Berjalan sepenuhnya di browser.',
+  description: 'Postur dan kedipan langsung, jeda napas, cek stres harian, kabar mingguan, dan layar hangat menjelang tidur. Berjalan sepenuhnya di browser.',
 };
 
 export default function AppPage() {

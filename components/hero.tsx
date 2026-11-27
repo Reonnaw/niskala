@@ -64,12 +64,13 @@ export default function Hero() {
     return true;
   });
 
+  // It acts it out while in view, so it still has something to show when someone scrolls down to it.
   useEffect(() => {
-    if (!auto || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!auto || !inView || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const start = performance.now();
     const id = setInterval(() => play(performance.now() - start) || clearInterval(id), 50);
     return () => clearInterval(id);
-  }, [auto]);
+  }, [auto, inView]);
 
   const posture = {
     ...UPRIGHT,
@@ -94,13 +95,12 @@ export default function Hero() {
         ]}
       />
 
-      <h1 className="text-[2.6rem] leading-[1.05] font-extrabold sm:text-6xl lg:col-start-1 lg:row-start-2 lg:text-[3.7rem]">
-        Lihat{' '}
+      <h2 className="text-[2.6rem] leading-[1.05] font-extrabold sm:text-6xl lg:col-start-1 lg:row-start-2 lg:text-[3.7rem]">
+        Coba bikin dia{' '}
         <span className="marker" style={{ '--mark': `${30 + Math.max(slouch, Math.abs(lean)) * 0.7}%` } as CSSProperties}>
-          pegal
-        </span>{' '}
-        sebelum terasa.
-      </h1>
+          bungkuk.
+        </span>
+      </h2>
 
       <figure className="relative isolate mt-24 min-w-0 lg:col-start-2 lg:row-span-4 lg:self-center">
         {/* Morning light behind the stage: the page starts at daybreak and the story below ends at night. */}
@@ -111,7 +111,7 @@ export default function Hero() {
             Tenang, videomu nggak keluar dari browser.
             <span aria-hidden className="absolute -bottom-[7px] left-1/2 size-3 -translate-x-1/2 rotate-45 border-r border-b border-rule bg-raised" />
           </p>
-          <Image src="/3d/webcam.webp" alt="" width={460} height={388} unoptimized loading="eager" className="mt-2 h-auto w-20 drop-shadow-md sm:w-24" />
+          <Image src="/3d/webcam.webp" alt="" width={460} height={388} unoptimized className="mt-2 h-auto w-20 drop-shadow-md sm:w-24" />
         </div>
         <Image src="/3d/plant.webp" alt="" width={210} height={460} unoptimized className="absolute -bottom-3 -left-9 z-10 hidden h-auto w-16 drop-shadow-lg lg:block xl:w-[4.5rem]" />
         <div className="stage card relative overflow-hidden">
@@ -120,13 +120,12 @@ export default function Hero() {
               who={who}
               view="side"
               amount={slouch / 100}
-              eager
               alt={`Dari samping: punggung bungkuk ${torsoDeg}° dan kepala ${headDeg}° ke depan`}
             />
           </div>
           <div className="card absolute top-3 right-3 w-[30%] p-1.5">
             <div className="aspect-[640/760] overflow-hidden rounded-xl bg-surface">
-              <CastFrame who={who} view="front" amount={lean / 100} eager alt={lean === 0 ? 'Dari depan: tegak' : `Dari depan: miring ${sideDeg}° ke ${sideWord(lean)}`} />
+              <CastFrame who={who} view="front" amount={lean / 100} alt={lean === 0 ? 'Dari depan: tegak' : `Dari depan: miring ${sideDeg}° ke ${sideWord(lean)}`} />
             </div>
           </div>
           <p className="float-card absolute right-3 bottom-3 flex items-center gap-2 py-2 font-semibold xl:hidden" aria-live={auto ? 'off' : 'polite'}>

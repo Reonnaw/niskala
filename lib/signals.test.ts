@@ -33,6 +33,12 @@ test('small head wobble stays inside the dead zone', () => {
   assert.equal(p.head + Math.abs(p.side) + Math.abs(p.tilt), 0);
 });
 
+test('looking up is not a slouch, nodding down is', () => {
+  // Looking up raises the nose in the frame along with the negative pitch.
+  assert.equal(driftOf(postureFrom(face({ pitch: -28, noseY: 270 }), base)), 0);
+  assert.ok(postureFrom(face({ pitch: 22 }), base).head > 0.5);
+});
+
 test('slouch and lean-in map to bounded drift', () => {
   const p = postureFrom(face({ iod: 120, noseY: 360 }), base);
   assert.ok(p.head > 0.7 && p.head <= 1, `head ${p.head}`);

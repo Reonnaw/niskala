@@ -48,13 +48,20 @@ export default function PrivacyPage() {
               Angka ini dipakai buat tampilan langsung dan hilang begitu kamu ninggalin halaman.
             </p>
           </Block>
+          <Block icon={IconShield} title="Nggak nebak perasaanmu dari wajah">
+            <p>
+              Niskala sengaja nggak nebak emosi atau stres dari ekspresi wajahmu. Kamera cuma dipakai buat sudut kepala dan badan, plus
+              kedipan. <strong>Angka stres cuma datang dari yang kamu isi sendiri.</strong>
+            </p>
+          </Block>
           <Block icon={IconHistory} title="Yang kesimpan di browsermu">
             <p>
               Di local storage browser ini: <strong>setelan</strong>, <strong>kalibrasi</strong> (beberapa angka soal posisi tegakmu,
-              buat kamera depan dan samping), <strong>ringkasan sesi</strong> (menit aktif, menit bungkuk, jeda yang diambil, rata-rata
-              kedip), dan <strong>cek pegal</strong> yang kamu isi sendiri. Semua itu jadi bahan halaman Riwayat. Cek pegal itu data
-              kesehatan, jadi nggak pernah ikut dicadangkan. Kalau kamu minta saran coach, yang dikirim cuma rata-rata mingguannya yang
-              dibulatkan.
+              buat kamera depan dan samping), <strong>ringkasan sesi</strong> (menit aktif, menit bungkuk, jeda yang diambil, blok fokus,
+              rata-rata kedip), dan yang kamu isi sendiri: <strong>cek pegal dan stres</strong> tiap hari dan <strong>kabar mingguan</strong>{' '}
+              (kuesioner WHO-5). Semua itu jadi bahan halaman Riwayat. Cek harian dan kabar mingguan itu data kesehatan, yang di UU PDP
+              (UU No. 27 Tahun 2022) masuk data pribadi spesifik, jadi nggak pernah ikut dicadangkan. Kalau kamu minta saran coach, yang
+              dikirim cuma rata-rata pegal dan stres seminggu yang dibulatkan. Jawaban kabar mingguan nggak pernah dikirim ke mana-mana.
             </p>
             <p>
               Kamu bisa unduh atau hapus semuanya dari tab Setelan di{' '}
@@ -75,18 +82,24 @@ export default function PrivacyPage() {
           <Block icon={IconLock} title="Coach mingguan, kalau kamu minta">
             <p>
               Tombol <strong>Minta saran coach</strong> di Riwayat ngirim angka ringkasan 7 hari terakhir ke server situs ini: menit di
-              depan layar, persen waktu bungkuk dan jarang kedip, jumlah jeda, skor harian, semuanya dibulatkan. Server nerusin angka
-              itu ke Gemini (Google) buat nyusun tiga saran, lalu nggak nyimpan apa-apa. Video, titik wajah, dan sesi mentahmu nggak
-              ikut, dan kamu bisa lihat persis yang dikirim sebelum nekan tombolnya.
+              depan layar, persen waktu bungkuk dan jarang kedip, jumlah jeda, skor harian, rata-rata pegal dan stres, semuanya
+              dibulatkan. Server nerusin angka itu ke Gemini (Google) buat nyusun tiga saran, lalu nggak nyimpan apa-apa. Video, titik
+              wajah, dan sesi mentahmu nggak ikut, dan kamu bisa lihat persis yang dikirim sebelum nekan tombolnya.
             </p>
           </Block>
           <Block icon={IconShield} title="Kamu nggak dilacak">
             <p>Nggak ada analitik, skrip iklan, cookie, atau akun di situs ini.</p>
+            <p>
+              Situs ini juga minta browser ngunci beberapa hal: cuma Niskala sendiri yang boleh minta akses kamera, mikrofon dan lokasi
+              nggak bisa diminta sama sekali, situs lain nggak bisa nampilin Niskala di dalam halamannya, dan alamat halaman ini nggak
+              ikut kekirim pas kamu buka tautan keluar.
+            </p>
           </Block>
           <Block icon={IconInfo} title="Bukan saran medis">
             <p>
-              Niskala cuma ngasih pengingat ergonomi dan kebiasaan tidur yang umum. Ini bukan alat medis. Kalau leher, punggung, atau
-              matamu terus sakit, periksa ke tenaga kesehatan.
+              Niskala cuma ngasih pengingat ergonomi, jeda, dan kebiasaan tidur yang umum. Ini bukan alat medis, dan skor kabar mingguan
+              bukan penilaian kondisi mentalmu. Kalau leher, punggung, atau matamu terus sakit, periksa ke tenaga kesehatan. Kalau lagi
+              berat, kamu bisa ngobrol sama Healing119 dari Kemenkes: telepon 119 ext 8, gratis, 24 jam.
             </p>
           </Block>
         </div>

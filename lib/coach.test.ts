@@ -12,6 +12,8 @@ const session = (started: Date, over: Partial<SessionSummary>): SessionSummary =
   resets: 0,
   eye_breaks: 0,
   trainings: 0,
+  breaths: 0,
+  focus: 0,
   slouch_s: 0,
   low_blink_s: 0,
   late_s: 0,
@@ -24,7 +26,7 @@ const now = new Date(2026, 10, 20, 15, 0);
 const week = weekSummary(
   byDay(
     [
-      session(new Date(2026, 10, 20, 9, 0), { active_s: 1800, slouch_s: 540, low_blink_s: 180, avg_blink: 12, resets: 1, trainings: 2 }),
+      session(new Date(2026, 10, 20, 9, 0), { active_s: 1800, slouch_s: 540, low_blink_s: 180, avg_blink: 12, resets: 1, trainings: 2, breaths: 1 }),
       session(new Date(2026, 10, 18, 22, 0), { active_s: 1200, late_s: 600, source: 'timer', eye_breaks: 2 }),
     ],
     7,
@@ -32,9 +34,9 @@ const week = weekSummary(
   ),
   2,
   [
-    { day: '2026-11-20', neck: 4, back: 2, eyes: 5 },
-    { day: '2026-11-19', neck: 3, back: 2, eyes: 6 },
-    { day: '2026-11-01', neck: 10, back: 10, eyes: 10 }, // outside the week
+    { day: '2026-11-20', neck: 4, back: 2, eyes: 5, stress: 6 },
+    { day: '2026-11-19', neck: 3, back: 2, eyes: 6, stress: 7 },
+    { day: '2026-11-01', neck: 10, back: 10, eyes: 10, stress: 10 }, // outside the week
   ],
 );
 
@@ -50,6 +52,8 @@ test('the week sent to the coach is whole minutes and percents of tracked time',
   assert.equal(week.checkinDays, 2);
   assert.equal(week.neckPain, 4); // 3.5 rounds up
   assert.equal(week.eyePain, 6);
+  assert.equal(week.stress, 7); // 6.5 rounds up
+  assert.equal(week.breaths, 1);
   assert.equal(week.perDay.length, 7);
   assert.equal(week.perDay[6].score, 75);
   assert.equal(week.perDay[4].score, null);
@@ -63,6 +67,8 @@ test('a checked week survives the round trip and nothing extra gets through', ()
   assert.equal(parseWeek({ ...week, missionDays: 9 }), null);
   assert.equal(parseWeek({ ...week, backPain: 11 }), null);
   assert.equal(parseWeek({ ...week, eyePain: 'sakit banget' }), null);
+  assert.equal(parseWeek({ ...week, stress: 12 }), null);
+  assert.equal(parseWeek({ ...week, stress: 'cemas' }), null);
   assert.deepEqual(parseWeek({ ...week, neckPain: null })?.neckPain, null);
   assert.equal(parseWeek({ ...week, activeMin: -5 }), null);
   assert.equal(parseWeek({ ...week, avgScore: '90' }), null);

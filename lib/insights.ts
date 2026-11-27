@@ -1,4 +1,4 @@
-import type { Checkin, SessionSummary } from './store';
+import type { Checkin, SessionSummary, Who5 } from './store';
 
 export type Day = {
   key: string; // local YYYY-MM-DD
@@ -11,6 +11,8 @@ export type Day = {
   resets: number;
   eye_breaks: number;
   trainings: number;
+  breaths: number;
+  focus: number; // focus blocks finished
   blink: number | null; // active-time weighted mean
 };
 
@@ -23,7 +25,7 @@ export function byDay(sessions: SessionSummary[], count: number, now: Date): Day
   const index = new Map<string, Day & { blinkW: number; blinkT: number }>();
   for (let i = count - 1; i >= 0; i--) {
     const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-    const d = { key: dayKey(date), date, active_s: 0, tracked_s: 0, slouch_s: 0, low_blink_s: 0, late_s: 0, resets: 0, eye_breaks: 0, trainings: 0, blink: null, blinkW: 0, blinkT: 0 };
+    const d = { key: dayKey(date), date, active_s: 0, tracked_s: 0, slouch_s: 0, low_blink_s: 0, late_s: 0, resets: 0, eye_breaks: 0, trainings: 0, breaths: 0, focus: 0, blink: null, blinkW: 0, blinkT: 0 };
     index.set(d.key, d);
     days.push(d);
   }
@@ -38,6 +40,8 @@ export function byDay(sessions: SessionSummary[], count: number, now: Date): Day
     d.resets += s.resets;
     d.eye_breaks += s.eye_breaks;
     d.trainings += s.trainings;
+    d.breaths += s.breaths;
+    d.focus += s.focus;
     if (s.avg_blink !== null) {
       d.blinkW += s.avg_blink * s.active_s;
       d.blinkT += s.active_s;
@@ -71,14 +75,15 @@ export function streak(days: Day[]) {
   return n;
 }
 
-export type MissionId = 'eye' | 'reset' | 'train' | 'score';
+export type MissionId = 'eye' | 'reset' | 'breath' | 'train' | 'score';
 export type Mission = { id: MissionId; label: string; have: number; need: number; done: boolean };
 
-/** A small daily checklist that ties the breaks, posture training and the score together. */
+/** A small daily checklist that ties the breaks, the breathing pause, posture training and the score together. */
 export function missions(d: Day): Mission[] {
   const list = [
     { id: 'eye' as const, label: 'Istirahat mata 3 kali', have: d.eye_breaks, need: 3 },
     { id: 'reset' as const, label: 'Stretching 2 kali', have: d.resets, need: 2 },
+    { id: 'breath' as const, label: 'Jeda napas sekali', have: d.breaths, need: 1 },
     { id: 'train' as const, label: 'Latihan postur sekali', have: d.trainings, need: 1 },
     { id: 'score' as const, label: `Skor ${GOAL} ke atas`, have: dayScore(d) ?? 0, need: GOAL },
   ];
@@ -86,6 +91,10 @@ export function missions(d: Day): Mission[] {
 }
 
 export const missionsDone = (d: Day) => missions(d).filter((m) => m.done).length;
+
+const BREAKS: MissionId[] = ['eye', 'reset', 'breath'];
+/** Every break mission met: the eye breaks, the stretching and the breathing pause. */
+export const enoughBreaks = (d: Day) => missions(d).every((m) => m.done || !BREAKS.includes(m.id));
 
 export function totals(days: Day[]) {
   const sum = (f: (d: Day) => number) => days.reduce((a, d) => a + f(d), 0);
@@ -99,6 +108,8 @@ export function totals(days: Day[]) {
     resets: sum((d) => d.resets),
     eye_breaks: sum((d) => d.eye_breaks),
     trainings: sum((d) => d.trainings),
+    breaths: sum((d) => d.breaths),
+    focus: sum((d) => d.focus),
     missionDays: days.filter((d) => missions(d).every((m) => m.done)).length,
     activeDays: days.filter((d) => d.active_s > 0).length,
     blink: withBlink.length
@@ -113,24 +124,36 @@ export const painOf = (c: Checkin) => (c.neck + c.back + c.eyes) / 3;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
 /**
- * Discomfort on days that met the score goal against days that did not, over the given days. Only days with both a
- * score and a check-in count, and each side needs two of them before the comparison means anything.
+ * A value of each day, or of its check-in, on days that are on one side of a split against days on the other, over
+ * the given days. Only days the split applies to (`side` not null) and with that value count, and each side needs two
+ * of them before the comparison means anything.
  */
-export function painByScore(days: Day[], checkins: Checkin[]) {
+function compare(days: Day[], checkins: Checkin[], side: (d: Day) => boolean | null, value: (d: Day, c: Checkin | undefined) => number | undefined) {
   const byDay = new Map(checkins.map((c) => [c.day, c]));
   const good: number[] = [];
   const low: number[] = [];
   for (const d of days) {
-    const c = byDay.get(d.key);
-    const s = dayScore(d);
-    if (!c || s === null) continue;
-    (s >= GOAL ? good : low).push(painOf(c));
+    const v = value(d, byDay.get(d.key));
+    const s = side(d);
+    if (v === undefined || s === null) continue;
+    (s ? good : low).push(v);
   }
   const ready = good.length >= 2 && low.length >= 2;
   return { good: { n: good.length, mean: mean(good) }, low: { n: low.length, mean: mean(low) }, ready };
 }
 
-/** Each area's mean over the check-ins that fall on the given days, or null with none. */
+/** Discomfort on days that met the score goal against days that did not. */
+export const painByScore = (days: Day[], checkins: Checkin[]) =>
+  compare(days, checkins, (d) => { const s = dayScore(d); return s === null ? null : s >= GOAL; }, (_, c) => c && painOf(c));
+
+/** Stress on work days that took every break mission against work days that did not. */
+export const stressByBreaks = (days: Day[], checkins: Checkin[]) =>
+  compare(days, checkins, (d) => (d.active_s > 0 ? enoughBreaks(d) : null), (_, c) => c?.stress);
+
+/** Focus blocks finished on work days that took every break mission against work days that did not. */
+export const focusByBreaks = (days: Day[]) => compare(days, [], (d) => (d.active_s > 0 ? enoughBreaks(d) : null), (d) => d.focus);
+
+/** Each area's mean, and stress, over the check-ins that fall on the given days, or null with none. */
 export function painAverages(days: Day[], checkins: Checkin[]) {
   const keys = new Set(days.map((d) => d.key));
   const inRange = checkins.filter((c) => keys.has(c.day));
@@ -139,5 +162,20 @@ export function painAverages(days: Day[], checkins: Checkin[]) {
     neck: mean(inRange.map((c) => c.neck)),
     back: mean(inRange.map((c) => c.back)),
     eyes: mean(inRange.map((c) => c.eyes)),
+    stress: mean(inRange.flatMap((c) => c.stress ?? [])),
   };
+}
+
+/** WHO-5 Well-Being Index: the five answers summed and multiplied by four, 0 (worst) to 100 (best). */
+export const who5Score = (w: Who5) => w.items.reduce((a, b) => a + b, 0) * 4;
+/** Under 50 is the questionnaire's own cut-off for suggesting a talk with someone. */
+export const WHO5_LOW = 50;
+export const WHO5_EVERY_DAYS = 7;
+
+/** The local day the next WHO-5 is due: today with none yet, else a week after the newest one. */
+export function who5DueOn(list: Who5[], today: string) {
+  const last = list.reduce<string | null>((a, w) => (a === null || w.day > a ? w.day : a), null);
+  if (last === null) return today;
+  const [y, m, d] = last.split('-').map(Number);
+  return dayKey(new Date(y, m - 1, d + WHO5_EVERY_DAYS));
 }

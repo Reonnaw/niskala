@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Prefs, SessionSummary } from './store';
+import { SAMPLE_ID, type Prefs, type SessionSummary } from './store';
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key =
@@ -30,8 +30,9 @@ function getClient() {
   return client;
 }
 
-/** Upserts session summaries and preferences. Never sends video, landmarks or the calibration baseline. */
-export async function pushToSupabase(sessions: SessionSummary[], prefs: Prefs) {
+/** Upserts session summaries and preferences. Never sends video, landmarks, the calibration baseline or sample sessions. */
+export async function pushToSupabase(all: SessionSummary[], prefs: Prefs) {
+  const sessions = all.filter((s) => !s.id.startsWith(SAMPLE_ID));
   const c = await getClient();
   const { data } = await c.auth.getSession();
   const user_id = data.session?.user.id;

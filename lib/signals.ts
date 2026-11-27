@@ -163,8 +163,8 @@ export function dominant(p: Posture) {
 export const driftOf = (p: Posture) => Math.max(p.head, p.torso, Math.abs(p.side), Math.abs(p.tilt));
 
 export function postureFrom(s: FaceSample, b: Baseline): Posture {
-  // Pitch sign depends on camera mounting, so any sustained pitch change counts.
-  const pitch = Math.max(0, Math.abs(s.pitch - b.pitch) - 4) / 18;
+  // The face model's pitch grows as the head nods down, wherever the camera sits, so looking up never counts.
+  const pitch = Math.max(0, s.pitch - b.pitch - 4) / 18;
   // Leaning toward the screen makes the face larger in frame.
   const lean = (s.iod / b.iod - 1) / 0.25;
   // Slouching lowers the face; measured in eye-widths so it is distance independent.

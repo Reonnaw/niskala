@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Niskala',
     short_name: 'Niskala',
-    description: 'Pengingat postur, kedip, dan jam tidur buat yang lama di depan layar. Jalan sepenuhnya di perangkatmu.',
+    description: 'Jaga kesehatan mental lewat badan dan kebiasaan kerja di depan layar. Jalan sepenuhnya di perangkatmu.',
     lang: 'id',
     start_url: '/app',
     display: 'standalone',

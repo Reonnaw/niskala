@@ -1,9 +1,10 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { IconArrowRight, IconCamera, IconCheck, IconLock, IconPip, IconShield } from '@/components/icons';
+import { IconArrowRight, IconCamera, IconCheck, IconHistory, IconLock, IconPip, IconShield, IconSun, IconWorkspace } from '@/components/icons';
 import { Drift, Stars } from '@/components/ambient';
 import { CastFrame } from '@/components/cast';
 import Hero from '@/components/hero';
+import { LogoMark } from '@/components/logo';
 import SiteFooter from '@/components/site-footer';
 import Story from '@/components/story';
 import { ROUTINES } from '@/lib/routines';
@@ -29,16 +30,45 @@ const CAMERAS = [
   },
 ];
 
+const WHY = [
+  {
+    icon: IconWorkspace,
+    hue: 'hue-nila',
+    title: 'Nemenin pas kerja',
+    body: 'Nggak nunggu kamu udah drop baru dibuka. Kerja dalam blok fokus 25 atau 50 menit, dan Niskala ngajak jeda sebelum capeknya numpuk.',
+  },
+  {
+    icon: IconHistory,
+    hue: 'hue-daun',
+    title: 'Buktinya dari datamu sendiri',
+    body: 'Riwayat ngebandingin stres dan blok fokusmu di hari yang cukup jeda sama yang nggak. Polanya punyamu, bukan rata-rata orang lain.',
+  },
+  {
+    icon: IconSun,
+    hue: 'hue-kunyit',
+    title: 'Pengingat yang nggak nambah stres',
+    body: 'Nggak ada pop-up atau alarm. Cuma pinggir layar yang nyala pelan, terus padam lagi begitu kamu balik tegak.',
+  },
+  {
+    icon: IconShield,
+    hue: 'hue-mengkudu',
+    title: 'Nggak nebak emosi dari wajahmu',
+    body: 'Kamera cuma baca sudut badan dan kedipan. Soal stres, Niskala percaya sama yang kamu isi sendiri.',
+  },
+];
+
 const STAYS = [
   'Gambar dari kamera, dicek di tab lalu langsung dibuang',
   'Titik wajah, titik badan, dan waktu kedip',
   'Posisi tegakmu waktu kalibrasi',
   'Semua setelan dan ringkasan sesi, kecuali kamu nyalain cadangan',
+  'Cek stres, pegal, dan kabar mingguan, karena UU PDP ngegolongin data kesehatan sebagai data sensitif',
   'Bahkan modelnya diambil dari situs ini, bukan CDN',
 ];
 const CAN_LEAVE = [
-  'Ringkasan sesi yang dibulatkan: menit aktif, menit bungkuk, jeda, rata-rata kedip',
+  'Ringkasan sesi yang dibulatkan: menit aktif, menit bungkuk, jeda, blok fokus, rata-rata kedip',
   'Setelan: jam tidur, layar hangat, jadwal jeda, kepekaan',
+  'Rata-rata stres dan pegal seminggu yang dibulatkan, cuma pas kamu minta saran coach',
   'Cuma setelah kamu nyalain “Cadangkan ringkasan”, pakai ID anonim',
 ];
 
@@ -47,7 +77,79 @@ export default function Home() {
   return (
     <>
       <main className="overflow-x-clip">
+        <section className="relative mx-auto grid min-h-[calc(100svh-4rem)] max-w-6xl content-center items-center gap-x-12 gap-y-8 px-4 py-12 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+          <Drift
+            spots={[
+              { top: '6%', left: '-4%', size: '24rem', turn: 150, float: 17 },
+              { top: '70%', left: '30%', size: '10rem', turn: 110, float: 13 },
+            ]}
+          />
+          <div>
+            <h1 className="text-[2.8rem] leading-[1.02] font-extrabold sm:text-7xl lg:text-[5.2rem]">
+              Stres nggak kelihatan. <span className="marker">Bungkukmu</span> kelihatan.
+            </h1>
+            <Link href="/app" className="btn btn-primary btn-lg mt-10">
+              Mulai sekarang
+              <IconArrowRight className="size-4" />
+            </Link>
+          </div>
+          {/* Sekala above, niskala below: the room you can see, standing on what it hides. */}
+          <figure className="iso-float relative isolate justify-self-center">
+            <div aria-hidden className="absolute -inset-x-16 -inset-y-10 -z-10 bg-[radial-gradient(closest-side_at_50%_40%,color-mix(in_oklab,var(--kunyit)_30%,transparent),transparent)]" />
+            <div aria-hidden className="iso-glow absolute top-[93%] left-1/2 -z-10 aspect-square w-[45%] -translate-1/2 rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--kunyit)_70%,transparent),transparent)]" />
+            <Image
+              src="/3d/iso.webp"
+              alt="Ruang kerja yang melayang: Raka kerja di meja, Ayu stretching. Di bawah lantainya, garis kunyit turun lewat lapisan warna batik ke logo kawung yang nyala."
+              width={1162}
+              height={1613}
+              unoptimized
+              priority
+              className="h-auto max-h-[62svh] w-auto lg:max-h-[min(80svh,52rem)]"
+            />
+          </figure>
+        </section>
+
         <Hero />
+
+        <section className="hue-ungu border-y border-rule bg-hue-soft">
+          <div className="mx-auto grid max-w-6xl gap-x-16 gap-y-10 px-4 py-20 sm:px-8 sm:py-24 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <h2 className="text-3xl sm:text-[2.6rem] sm:leading-tight">
+              <span className="text-hue-ink">16%</span> orang dewasa usia kerja punya gangguan mental. Depresi dan kecemasan aja bikin{' '}
+              <span className="text-hue-ink">12 miliar</span> hari kerja hilang tiap tahun.
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {WHY.map((w) => (
+                <article key={w.title} className={`card ${w.hue} p-5`}>
+                  <h3 className="flex items-center gap-3 text-lg">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-hue-soft text-hue-ink">
+                      <w.icon className="size-5" />
+                    </span>
+                    {w.title}
+                  </h3>
+                  <p className="mt-3 text-muted text-pretty">{w.body}</p>
+                </article>
+              ))}
+              <article className="card flex items-center gap-5 p-5 sm:col-span-2">
+                <span className="grid size-20 shrink-0 place-items-center rounded-2xl bg-hue-soft text-accent">
+                  <LogoMark className="breathe size-14" />
+                </span>
+                <div>
+                  <h3 className="text-lg">Jeda napas 1 menit</h3>
+                  <p className="mt-1 text-muted text-pretty">
+                    Tarik napas pas kawungnya membesar, buang pas dia mengecil, dipandu suara. Jadi salah satu misi harian.
+                  </p>
+                </div>
+              </article>
+              <p className="text-sm text-muted sm:col-span-2">
+                Sumber:{' '}
+                <a href="https://www.who.int/news-room/fact-sheets/detail/mental-health-at-work" className="link">
+                  WHO, Mental health at work
+                </a>
+                , perkiraan global. Angka 16% itu data tahun 2023.
+              </p>
+            </div>
+          </div>
+        </section>
 
         <section className="relative mx-auto max-w-6xl px-4 py-20 sm:px-8 sm:py-24">
           <Drift spots={[{ top: '-8%', right: '-2%', size: '22rem', turn: 160, float: 19 }]} />
@@ -222,8 +324,9 @@ export default function Home() {
                 ngebentuk semuanya.
               </p>
               <p className="text-on-band-muted">
-                Kerja di depan layar juga punya sisi yang nggak kelihatan: punggung yang pelan-pelan bungkuk, mata yang lupa ngedip,
-                sejam yang tahu-tahu jadi tiga jam. Niskala bikin sisi itu kelihatan, terus minggir.
+                Kerja di depan layar juga punya sisi yang nggak kelihatan: stres yang numpuk pelan-pelan. Yang kelihatan cuma tandanya,
+                punggung yang makin bungkuk, mata yang lupa ngedip, jeda yang terus dilewatin. Niskala baca tanda itu, ngajak kamu jeda,
+                terus minggir.
               </p>
               <Link href="/app" className="btn btn-lg mt-4 border-band-accent bg-band-accent text-[#1c2643] hover:border-on-band hover:bg-on-band">
                 Mulai sekarang, gratis

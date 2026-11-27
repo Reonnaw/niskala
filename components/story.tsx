@@ -193,20 +193,22 @@ export default function Story() {
       <Stars className="bottom-0 h-[150svh] transition-opacity duration-[1.2s]" style={{ opacity: 'var(--night, 0)' }} />
       <div className="relative mx-auto max-w-6xl px-4 pt-20 pb-10 sm:px-8 sm:pt-28">
         <h2 className="max-w-2xl text-3xl sm:text-[2.6rem] sm:leading-tight">Sehari bareng Niskala, dari pagi sampai jam tidur.</h2>
-        <div className="relative lg:grid lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-16">
+        <div className="relative lg:grid lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-12">
           <div aria-hidden ref={glowRef} className="edge-glow" />
           <div aria-hidden ref={cueRef} className="edge-cue" />
 
           <div className="sky-fill sticky top-16 z-10 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:order-2 lg:mx-0 lg:flex lg:h-[calc(100svh-4rem)] lg:items-center lg:self-start lg:bg-transparent lg:p-0">
-            <div className="relative w-full">
-              <div ref={stageRef} aria-hidden className="sky-stage relative aspect-[4/3] w-full overflow-hidden rounded-3xl">
+            {/* The room floats on the sky like the hero's diorama, so there is no frame around it. On phones it stays small
+                enough to leave room for the text under it. */}
+            <div className="relative mx-auto w-full max-w-[44svh] lg:max-w-none">
+              <div ref={stageRef} aria-hidden className="relative aspect-square w-full">
                 <Image src="/story/day.webp" alt="" fill unoptimized className="object-contain" />
                 <div ref={nightRef} className="absolute inset-0 opacity-0">
                   <Image src="/story/night.webp" alt="" fill unoptimized className="object-contain" />
                 </div>
                 <canvas ref={canvasRef} width={story.width} height={story.height} className="absolute inset-0 size-full" />
               </div>
-              <div className="absolute bottom-3 left-3 rounded-full bg-raised p-1.5 shadow-[0_8px_20px_-10px_rgb(0_0_0/0.5)] lg:-bottom-4 lg:-left-4">
+              <div className="absolute bottom-[4%] left-[2%] rounded-full bg-raised p-1.5 shadow-[0_8px_20px_-10px_rgb(0_0_0/0.5)]">
                 <CastPicker value={who} onChange={setWho} size="size-10" label="Siapa yang main" />
               </div>
             </div>

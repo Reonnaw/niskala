@@ -30,7 +30,6 @@ export default function SiteFooter() {
             </Link>
           ))}
         </nav>
-        <p className="md:ml-auto">Dibuat buat Techcomfest 2027, SDG 3: hidup sehat dan sejahtera.</p>
       </div>
     </footer>
   );

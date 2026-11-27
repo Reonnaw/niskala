@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Wide and tall enough for the workspace to fit one screen, with long columns scrolling on their own. */
+@custom-variant desk {
+  @media (min-width: 80rem) and (min-height: 40rem) {
+    @slot;
+  }
+}
+
 /* Palette from batik dyes, matched to the figures:
    lontar palm-leaf cream (paper), soga brown (ink and line art),
    nila indigo (the brand and every primary action), kunyit turmeric (strain, and the lit petal of the logo).
@@ -315,14 +322,6 @@
   --sky-mark: var(--band-accent);
 }
 /* The room's backdrop: a shade deeper than the sky, so the cutaway walls never melt into the page. */
-.sky-stage {
-  background-color: color-mix(in oklab, var(--surface), #0e1328 calc(var(--night, 0) * 100%));
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklab, var(--ink) 8%, transparent),
-    0 24px 48px -28px var(--shadow);
-  transition: background-color 1.2s ease;
-}
-
 /* Background motion, kept quiet: one turn takes minutes and the float is a few pixels, so it reads as a cloth
    stirring rather than something to watch. Only transform properties and opacity move. */
 .drift {
@@ -412,6 +411,16 @@
     translate: 0 6px;
   }
 }
+/* A check that has just appeared overshoots a little, so a finished mission is felt, not only read. */
+.pop {
+  transition:
+    scale 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.2s ease;
+  @starting-style {
+    scale: 0.3;
+    opacity: 0;
+  }
+}
 
 /* 24 frames of the 3D kawung from assets/objects/objects.blend in one strip; jump-none lands each step on a frame. */
 .kawung-turn {
@@ -425,7 +434,43 @@
   }
 }
 
+/* The landing page's breathing pacer: five seconds in, five out, like the workspace's breathing pause. */
+.breathe {
+  animation: breathe 10s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(0.55);
+  }
+  50% {
+    transform: scale(1);
+  }
+}
+
+/* The hero's floating room, and the kawung under it that glows on the same slow breath. */
+.iso-float {
+  animation: iso-float 8s ease-in-out infinite;
+}
+@keyframes iso-float {
+  50% {
+    translate: 0 -12px;
+  }
+}
+.iso-glow {
+  animation: iso-glow 5s ease-in-out infinite;
+}
+@keyframes iso-glow {
+  50% {
+    opacity: 0.45;
+    scale: 0.85;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .iso-float,
+  .iso-glow,
+  .breathe,
   .kawung-turn,
   .drift,
   .drift > svg,
@@ -436,9 +481,9 @@
   .edge-cue,
   .warm-shift,
   .enter,
+  .pop,
   .sky,
-  .sky-fill,
-  .sky-stage {
+  .sky-fill {
     transition: none;
   }
 }

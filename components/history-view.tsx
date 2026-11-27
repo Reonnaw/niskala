@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { useState, useSyncExternalStore } from 'react';
 import { minutes } from '@/lib/format';
 import { weekSummary, type Week } from '@/lib/coach';
-import { GOAL, byDay, dayKey, dayScore, missions, painAverages, painByScore, painOf, streak, totals, type Day } from '@/lib/insights';
-import { checkinsStore, coachStore, exportData, sessionsStore, type Checkin } from '@/lib/store';
+import { GOAL, byDay, dayKey, dayScore, enoughBreaks, focusByBreaks, missions, painAverages, painByScore, painOf, streak, stressByBreaks, totals, type Day } from '@/lib/insights';
+import { sampleData } from '@/lib/sample';
+import { checkinsStore, clearSample, coachStore, exportData, loadSample, sampleStore, sessionsStore, type Checkin } from '@/lib/store';
 import { toast } from '@/lib/toast';
-import { IconArrowRight, IconCheck, IconDownload, IconEye, IconGauge, IconHistory, IconMoon, IconPosture, IconStretch, IconTimer } from './icons';
+import { IconArrowRight, IconCheck, IconDownload, IconEye, IconGauge, IconHistory, IconInfo, IconMoon, IconPosture, IconStretch, IconTimer } from './icons';
 import { Stat } from './ui';
 import { Segmented } from './ui-client';
 
@@ -82,39 +83,79 @@ function Chart({ days }: { days: Day[] }) {
           </ol>
         </div>
       </div>
-      <table className="sr-only">
-        <caption>Waktu di layar dan waktu bungkuk per hari</caption>
-        <thead>
-          <tr>
-            <th>Hari</th>
-            <th>Waktu di layar</th>
-            <th>Bungkuk atau miring</th>
-          </tr>
-        </thead>
-        <tbody>
-          {days.map((d) => (
-            <tr key={d.key}>
-              <td>{dayLabel(d.date)}</td>
-              <td>{minutes(d.active_s)}</td>
-              <td>{minutes(d.slouch_s)}</td>
+      <div className="sr-only">
+        <table>
+          <caption>Waktu di layar dan waktu bungkuk per hari</caption>
+          <thead>
+            <tr>
+              <th>Hari</th>
+              <th>Waktu di layar</th>
+              <th>Bungkuk atau miring</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {days.map((d) => (
+              <tr key={d.key}>
+                <td>{dayLabel(d.date)}</td>
+                <td>{minutes(d.active_s)}</td>
+                <td>{minutes(d.slouch_s)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </figure>
   );
 }
 
 const one = (v: number) => v.toLocaleString('id-ID', { maximumFractionDigits: 1 });
 
+/** One cell per day, tinted by a value from 0 to `max` (more tints as `max`) with the number inside, and the day of the month under it. */
+function DayStrip({ days, value, color, title, ring, max = 10 }: {
+  days: Day[];
+  value: (d: Day) => number | undefined;
+  color: string;
+  title: (d: Day) => string;
+  ring?: (d: Day) => boolean;
+  max?: number;
+}) {
+  // Numbers fit a cell at 7 days on a phone and at 14 on wider screens; past that the tooltip and table carry them.
+  const numbers = days.length <= 7 ? '' : days.length <= 14 ? 'max-sm:hidden' : 'hidden';
+  const every = days.length > 14 ? 5 : 1;
+  return (
+    <>
+      <ol className="mt-5 flex gap-[3px] sm:gap-1.5" aria-hidden>
+        {days.map((d) => {
+          const v = value(d);
+          return (
+            <li
+              key={d.key}
+              className={`grid aspect-square max-h-14 flex-1 place-items-center rounded-md text-sm font-bold tabular-nums ${v === undefined ? 'border border-dashed border-edge/40' : ''} ${ring?.(d) ? 'ring-2 ring-daun ring-inset' : ''}`}
+              // One hue from faint to strong; the number inside carries the value too. Capped so the ink stays readable.
+              style={v === undefined ? undefined : { background: `color-mix(in oklab, ${color} ${Math.round(8 + Math.min(v / max, 1) * 47)}%, var(--surface))` }}
+              title={title(d)}
+            >
+              {v !== undefined && <span className={numbers}>{one(v)}</span>}
+            </li>
+          );
+        })}
+      </ol>
+      <ol className="mt-2 flex gap-[3px] text-center text-[11px] text-muted tabular-nums sm:gap-1.5" aria-hidden>
+        {days.map((d, i) => (
+          <li key={d.key} className="flex-1">
+            {(days.length - 1 - i) % every === 0 ? d.date.getDate() : ''}
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
 /** Self-rated discomfort per day next to the score: the place where better posture can show up as less pain. */
 function PainCard({ days, checkins }: { days: Day[]; checkins: Checkin[] }) {
   const byKey = new Map(checkins.map((c) => [c.day, c]));
   const cmp = painByScore(days, checkins);
   const avg = painAverages(days, checkins);
-  // Numbers fit a cell at 7 days on a phone and at 14 on wider screens; past that the tooltip and table carry them.
-  const numbers = days.length <= 7 ? '' : days.length <= 14 ? 'max-sm:hidden' : 'hidden';
-  const every = days.length > 14 ? 5 : 1;
 
   return (
     <section className="card p-5 sm:p-6">
@@ -132,31 +173,19 @@ function PainCard({ days, checkins }: { days: Day[]; checkins: Checkin[] }) {
         </div>
       ) : (
         <>
-          <ol className="mt-5 flex gap-[3px] sm:gap-1.5" aria-hidden>
-            {days.map((d) => {
+          <DayStrip
+            days={days}
+            value={(d) => {
               const c = byKey.get(d.key);
-              const v = c && painOf(c);
+              return c && painOf(c);
+            }}
+            color="var(--mengkudu)"
+            title={(d) => {
+              const c = byKey.get(d.key);
               const score = dayScore(d);
-              return (
-                <li
-                  key={d.key}
-                  className={`grid aspect-square max-h-14 flex-1 place-items-center rounded-md text-sm font-bold tabular-nums ${c ? '' : 'border border-dashed border-edge/40'}`}
-                  // One hue from faint to strong; the number inside carries the value too. Capped so the ink stays readable.
-                  style={v === undefined ? undefined : { background: `color-mix(in oklab, var(--mengkudu) ${Math.round(8 + v * 4.7)}%, var(--surface))` }}
-                  title={`${dayLabel(d.date)}: ${c ? `leher ${c.neck}, punggung ${c.back}, mata ${c.eyes}` : 'belum diisi'}${score === null ? '' : `, skor ${score}`}`}
-                >
-                  {v !== undefined && <span className={numbers}>{one(v)}</span>}
-                </li>
-              );
-            })}
-          </ol>
-          <ol className="mt-2 flex gap-[3px] text-center text-[11px] text-muted tabular-nums sm:gap-1.5" aria-hidden>
-            {days.map((d, i) => (
-              <li key={d.key} className="flex-1">
-                {(days.length - 1 - i) % every === 0 ? d.date.getDate() : ''}
-              </li>
-            ))}
-          </ol>
+              return `${dayLabel(d.date)}: ${c ? `leher ${c.neck}, punggung ${c.back}, mata ${c.eyes}` : 'belum diisi'}${score === null ? '' : `, skor ${score}`}`;
+            }}
+          />
           <div className="mt-5 space-y-2 text-pretty">
             {cmp.ready ? (
               <p>
@@ -178,32 +207,208 @@ function PainCard({ days, checkins }: { days: Day[]; checkins: Checkin[] }) {
               Rata-rata dari {avg.n} hari: leher {one(avg.neck!)} · punggung {one(avg.back!)} · mata {one(avg.eyes!)}
             </p>
           </div>
-          <table className="sr-only">
-            <caption>Pegal per hari, skala 0 sampai 10</caption>
-            <thead>
-              <tr>
-                <th>Hari</th>
-                <th>Leher dan bahu</th>
-                <th>Punggung</th>
-                <th>Mata</th>
-                <th>Skor postur</th>
-              </tr>
-            </thead>
-            <tbody>
-              {days.map((d) => {
-                const c = byKey.get(d.key);
-                return (
+          <div className="sr-only">
+            <table>
+              <caption>Pegal per hari, skala 0 sampai 10</caption>
+              <thead>
+                <tr>
+                  <th>Hari</th>
+                  <th>Leher dan bahu</th>
+                  <th>Punggung</th>
+                  <th>Mata</th>
+                  <th>Skor postur</th>
+                </tr>
+              </thead>
+              <tbody>
+                {days.map((d) => {
+                  const c = byKey.get(d.key);
+                  return (
+                    <tr key={d.key}>
+                      <td>{dayLabel(d.date)}</td>
+                      <td>{c?.neck ?? 'belum diisi'}</td>
+                      <td>{c?.back ?? 'belum diisi'}</td>
+                      <td>{c?.eyes ?? 'belum diisi'}</td>
+                      <td>{dayScore(d) ?? 'belum ada'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Self-rated stress per day next to the breaks taken: where pausing during work can show up as a lighter head. */
+function StressCard({ days, checkins }: { days: Day[]; checkins: Checkin[] }) {
+  const stress = new Map(checkins.flatMap((c) => (c.stress === undefined ? [] : [[c.day, c.stress] as const])));
+  const cmp = stressByBreaks(days, checkins);
+  const rated = days.filter((d) => stress.has(d.key));
+  const all = (d: Day) => d.active_s > 0 && enoughBreaks(d);
+
+  return (
+    <section className="card p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
+        <h2 className="text-lg">Stres dan jeda</h2>
+        {rated.length > 0 && (
+          <span className="flex items-center gap-1.5 text-[13px] text-muted">
+            <span className="size-2.5 rounded-sm ring-2 ring-daun ring-inset" /> semua jeda diambil
+          </span>
+        )}
+      </div>
+      {rated.length === 0 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-4">
+          <p className="max-w-xl text-muted text-pretty">
+            Isi stres di cek harian ruang kerja. Setelah beberapa hari, di sini kelihatan apakah hari yang cukup jeda bikin kepalamu
+            lebih ringan.
+          </p>
+          <Link href="/app" className="btn btn-sm">
+            Isi cek harian
+            <IconArrowRight className="size-4" />
+          </Link>
+        </div>
+      ) : (
+        <>
+          <DayStrip
+            days={days}
+            value={(d) => stress.get(d.key)}
+            color="var(--ungu)"
+            ring={all}
+            title={(d) =>
+              `${dayLabel(d.date)}: ${stress.has(d.key) ? `stres ${stress.get(d.key)}` : 'belum diisi'}${d.active_s > 0 ? (all(d) ? ', semua jeda diambil' : ', jeda kurang') : ''}`
+            }
+          />
+          <div className="mt-5 space-y-2 text-pretty">
+            {cmp.ready ? (
+              <p>
+                Di hari kamu ngambil semua jeda (istirahat mata, stretching, jeda napas), stresmu rata-rata{' '}
+                <strong className="tabular-nums">{one(cmp.good.mean!)}</strong>. Di hari kerja lain{' '}
+                <strong className="tabular-nums">{one(cmp.low.mean!)}</strong>.{' '}
+                {cmp.low.mean! - cmp.good.mean! >= 0.5
+                  ? 'Jeda kelihatan bikin kepalamu lebih ringan.'
+                  : cmp.good.mean! - cmp.low.mean! >= 0.5
+                    ? 'Belum kelihatan bedanya ke arah yang bagus. Mungkin ada hal lain yang lagi berat, dan itu wajar.'
+                    : 'Bedanya masih tipis, terus isi biar polanya makin jelas.'}
+              </p>
+            ) : (
+              <p className="text-muted">
+                Biar kelihatan polanya, butuh minimal dua hari kerja yang semua jedanya diambil dan dua yang nggak, yang ada cek stresnya.
+                Sekarang {cmp.good.n} dan {cmp.low.n}.
+              </p>
+            )}
+            <p className="text-muted tabular-nums">
+              Rata-rata dari {rated.length} hari: stres {one(rated.reduce((a, d) => a + stress.get(d.key)!, 0) / rated.length)}
+            </p>
+          </div>
+          <div className="sr-only">
+            <table>
+              <caption>Stres per hari, skala 0 sampai 10</caption>
+              <thead>
+                <tr>
+                  <th>Hari</th>
+                  <th>Stres</th>
+                  <th>Semua jeda diambil</th>
+                </tr>
+              </thead>
+              <tbody>
+                {days.map((d) => (
                   <tr key={d.key}>
                     <td>{dayLabel(d.date)}</td>
-                    <td>{c?.neck ?? 'belum diisi'}</td>
-                    <td>{c?.back ?? 'belum diisi'}</td>
-                    <td>{c?.eyes ?? 'belum diisi'}</td>
-                    <td>{dayScore(d) ?? 'belum ada'}</td>
+                    <td>{stress.get(d.key) ?? 'belum diisi'}</td>
+                    <td>{d.active_s === 0 ? 'nggak kerja' : all(d) ? 'ya' : 'belum'}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Focus blocks per day next to the breaks: the place where taking every break can show it costs no work. */
+function FocusCard({ days }: { days: Day[] }) {
+  const cmp = focusByBreaks(days);
+  const used = days.filter((d) => d.focus > 0);
+  const all = (d: Day) => d.active_s > 0 && enoughBreaks(d);
+
+  return (
+    <section className="card p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
+        <h2 className="text-lg">Fokus dan jeda</h2>
+        {used.length > 0 && (
+          <span className="flex items-center gap-1.5 text-[13px] text-muted">
+            <span className="size-2.5 rounded-sm ring-2 ring-daun ring-inset" /> semua jeda diambil
+          </span>
+        )}
+      </div>
+      {used.length === 0 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-4">
+          <p className="max-w-xl text-muted text-pretty">
+            Kerja pakai blok fokus 25 atau 50 menit di ruang kerja. Setelah beberapa hari, di sini kelihatan apakah ngambil semua jeda
+            bikin kerjaanmu molor atau nggak.
+          </p>
+          <Link href="/app" className="btn btn-sm">
+            Mulai blok fokus
+            <IconArrowRight className="size-4" />
+          </Link>
+        </div>
+      ) : (
+        <>
+          <DayStrip
+            days={days}
+            value={(d) => d.focus || undefined}
+            color="var(--accent)"
+            // A day rarely holds more than six blocks; on a 0-10 scale the usual three or four barely tint.
+            max={6}
+            ring={all}
+            title={(d) =>
+              `${dayLabel(d.date)}: ${d.focus ? `${d.focus} blok fokus` : 'belum ada blok fokus'}${d.active_s > 0 ? (all(d) ? ', semua jeda diambil' : ', jeda kurang') : ''}`
+            }
+          />
+          <div className="mt-5 space-y-2 text-pretty">
+            {cmp.ready ? (
+              <p>
+                Di hari kamu ngambil semua jeda, kamu nyelesain rata-rata <strong className="tabular-nums">{one(cmp.good.mean!)}</strong> blok
+                fokus. Di hari kerja lain <strong className="tabular-nums">{one(cmp.low.mean!)}</strong>.{' '}
+                {cmp.good.mean! - cmp.low.mean! > -0.5
+                  ? 'Jeda nggak bikin kerjaanmu molor.'
+                  : 'Di hari yang jedanya kurang, blokmu lebih banyak. Coba lihat juga stresmu di hari-hari itu.'}
+              </p>
+            ) : (
+              <p className="text-muted">
+                Biar kelihatan polanya, butuh minimal dua hari kerja yang semua jedanya diambil dan dua yang nggak. Sekarang {cmp.good.n} dan{' '}
+                {cmp.low.n}.
+              </p>
+            )}
+            <p className="text-muted tabular-nums">
+              Total {used.reduce((a, d) => a + d.focus, 0)} blok fokus dalam {used.length} hari
+            </p>
+          </div>
+          <div className="sr-only">
+            <table>
+              <caption>Blok fokus per hari</caption>
+              <thead>
+                <tr>
+                  <th>Hari</th>
+                  <th>Blok fokus</th>
+                  <th>Semua jeda diambil</th>
+                </tr>
+              </thead>
+              <tbody>
+                {days.map((d) => (
+                  <tr key={d.key}>
+                    <td>{dayLabel(d.date)}</td>
+                    <td>{d.focus}</td>
+                    <td>{d.active_s === 0 ? 'nggak kerja' : all(d) ? 'ya' : 'belum'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </section>
@@ -272,6 +477,7 @@ function CoachCard({ week, today }: { week: Week; today: string }) {
 export default function HistoryView() {
   const sessions = useSyncExternalStore(sessionsStore.subscribe, sessionsStore.get, sessionsStore.server);
   const checkins = useSyncExternalStore(checkinsStore.subscribe, checkinsStore.get, checkinsStore.server);
+  const sample = useSyncExternalStore(sampleStore.subscribe, sampleStore.get, sampleStore.server);
   const hydrated = useSyncExternalStore(noop, () => true, () => false);
   const [range, setRange] = useState<(typeof RANGES)[number]>(14);
 
@@ -299,6 +505,16 @@ export default function HistoryView() {
         />
       </div>
 
+      {sample && (
+        <div className="hue-kunyit flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-hue-soft px-4 py-3 text-sm">
+          <IconInfo className="size-4 shrink-0 text-hue-ink" />
+          <p className="min-w-48 flex-1 text-pretty">Ini data contoh buat nyobain Riwayat. Data aslimu kesimpan begitu kamu pakai ruang kerja.</p>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={clearSample}>
+            Hapus data contoh
+          </button>
+        </div>
+      )}
+
       {t.activeDays === 0 ? (
         <div className="card grid place-items-center px-6 py-16 text-center">
           <span className="grid size-14 place-items-center rounded-2xl bg-surface text-accent">
@@ -307,10 +523,18 @@ export default function HistoryView() {
           <p className="mt-5 max-w-md text-lg text-pretty">
             Belum ada sesi di rentang ini. Sesi di ruang kerja yang lebih dari 30 detik otomatis kesimpan di sini, mode apa pun.
           </p>
-          <Link href="/app" className="btn btn-primary mt-6">
-            Buka ruang kerja
-            <IconArrowRight className="size-4" />
-          </Link>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <Link href="/app" className="btn btn-primary">
+              Buka ruang kerja
+              <IconArrowRight className="size-4" />
+            </Link>
+            {/* Two weeks of use before Riwayat says anything is a long wait for someone just trying it out. */}
+            {sessions.length === 0 && checkins.length === 0 && (
+              <button type="button" className="btn" onClick={() => loadSample(sampleData(new Date()))}>
+                Lihat pakai data contoh
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <>
@@ -319,7 +543,13 @@ export default function HistoryView() {
             <Stat icon={IconCheck} hue="hue-daun" label="Hari beruntun" value={`${run} hari`} detail={`skor ${GOAL} ke atas`} />
             <Stat icon={IconTimer} hue="hue-kunyit" label="Waktu di layar" value={minutes(t.active_s)} detail={`dalam ${t.activeDays} hari`} />
             <Stat icon={IconPosture} label="Bungkuk atau miring" value={`${Math.round(t.leanShare * 100)}%`} detail={minutes(t.slouch_s)} tone={t.leanShare > 0.25 ? 'alert' : undefined} />
-            <Stat icon={IconStretch} hue="hue-mengkudu" label="Jeda diambil" value={String(t.resets + t.eye_breaks)} detail={`${t.resets} stretching, ${t.eye_breaks} mata`} />
+            <Stat
+              icon={IconStretch}
+              hue="hue-mengkudu"
+              label="Jeda diambil"
+              value={String(t.resets + t.eye_breaks + t.breaths)}
+              detail={`${t.resets} stretching, ${t.eye_breaks} mata, ${t.breaths} napas`}
+            />
             <Stat icon={IconEye} hue="hue-daun" label="Rata-rata kedip" value={t.blink === null ? 'Belum ada' : `${Math.round(t.blink)}/mnt`} />
             <Stat icon={IconMoon} hue="hue-ungu" label="Lewat jam tidur" value={minutes(t.late_s)} />
             <Stat icon={IconCheck} hue="hue-daun" label="Semua misi beres" value={`${t.missionDays} hari`} detail={`dari ${t.activeDays}`} />
@@ -328,6 +558,10 @@ export default function HistoryView() {
           </div>
 
           <Chart days={days} />
+
+          <StressCard days={days} checkins={checkins} />
+
+          <FocusCard days={days} />
 
           <PainCard days={days} checkins={checkins} />
 
@@ -368,7 +602,7 @@ export default function HistoryView() {
                       <td className="py-3 pr-4">
                         <span className={pct(s.slouch_s, s.active_s) > 25 ? 'font-semibold text-alert-ink' : ''}>{pct(s.slouch_s, s.active_s)}%</span>
                       </td>
-                      <td className="py-3 pr-4">{s.resets + s.eye_breaks}</td>
+                      <td className="py-3 pr-4">{s.resets + s.eye_breaks + s.breaths}</td>
                       <td className="py-3 pr-5">
                         <span className="badge badge-neutral">{SOURCE[s.source] ?? s.source}</span>
                       </td>

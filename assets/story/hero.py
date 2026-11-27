@@ -1,9 +1,11 @@
-# Run headless, without saving:  blender -b story.blend --python hero.py
+# Run headless, without saving:  blender -b story.blend --python hero.py [-- idle]
 # Renders the hero demo's two slider sequences per character: a side view that slouches from
 # upright to fully rounded, and a front view (mirrored later, like a webcam) that leans from
-# left to right with the head tilting along. Plus a face crop for the person picker.
+# left to right with the head tilting along. Plus a face crop for the person picker. With `-- idle`, only the
+# upright side view's idle loop: hands typing, a slow breath and a small reading nod, seamless over IDLE frames.
 import math
 import os
+import sys
 
 import bpy
 from mathutils import Vector
@@ -14,6 +16,8 @@ exec(open(bpy.path.abspath('//characters.py')).read(), ns)
 O = bpy.data.objects
 OUT = bpy.path.abspath('//render/hero')
 N = 17  # frames per slider; the middle front frame is upright
+IDLE = 24  # frames in the idle loop, played at 8 a second
+ONLY_IDLE = 'idle' in sys.argv
 SHOW = {'desk', 'laptop', 'laptop_lid', 'laptop_screen', 'chairDesk', 'mug', 'blob_actor', 'blob_chair', 'lid_hinge'}
 
 
@@ -93,6 +97,18 @@ def main():
                       hands={'L': ('type', (0.11, A.type_y - 0.03, 0.69)), 'R': ('type', (-0.11, A.type_y - 0.03, 0.69))})
         out = f'{OUT}/{who}'
         os.makedirs(out, exist_ok=True)
+        if ONLY_IDLE:
+            for k in range(IDLE):
+                t = 2 * math.pi * k / IDLE
+                # Only the head moves, a slow reading nod: the mug hides the typing from the side, and a breath through the
+                # chest would change most of the frame, which the animated WebP pays for on every frame.
+                lift = {'L': 0.0, 'R': 0.0}
+                A.apply(200 + k, A.base(head=(8 + 3 * math.sin(t), 0, 0),
+                                        hands={'L': ('type', (0.12, A.type_y, 0.69 + lift['L'])), 'R': ('type', (-0.12, A.type_y, 0.69 + lift['R']))}))
+            for k in range(IDLE):
+                sc.frame_set(200 + k)
+                render(f'{out}/idle-{k:02d}.png', side, (1000, 1000))
+            continue
         for i in range(N):
             A.apply(i, blend(up, down, i / (N - 1)))
         for i in range(N):

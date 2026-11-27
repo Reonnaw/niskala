@@ -8,6 +8,7 @@ import { dominant, driftOf, type Posture } from '@/lib/signals';
 import type { FigureId } from '@/lib/store';
 import { hush, speak, stepIntro } from '@/lib/voice';
 import { IconCamera, IconCheck, IconNext, IconPause, IconPlay } from './icons';
+import { LogoMark } from './logo';
 import { HEAD_MAX_DEG, TILT_MAX_DEG } from './posture-figure';
 import { ProgressRing } from './ui';
 
@@ -66,7 +67,7 @@ export default function RoutineRunner({ kind, who, posture, threshold, blinkTota
 
   // Every move of the routine loads up front, so a new step shows its clip at once.
   useEffect(() => {
-    for (const s of steps) new window.Image().src = clip(who, s.visual);
+    for (const s of steps) if (s.visual !== 'kawung') new window.Image().src = clip(who, s.visual);
   }, [steps, who]);
 
   useEffect(() => {
@@ -79,6 +80,12 @@ export default function RoutineRunner({ kind, who, posture, threshold, blinkTota
     }, 100);
     return () => clearInterval(id);
   }, [running]);
+
+  // The pacer eases between 55% and full size within each cue: growing on a breath in, shrinking on a breath out.
+  const slot = step.seconds / step.cues.length;
+  const cueIndex = Math.floor(inStep / slot);
+  const eased = (1 - Math.cos((Math.PI * (inStep - cueIndex * slot)) / slot)) / 2;
+  const breath = 0.55 + 0.45 * (cueIndex % 2 ? 1 - eased : eased);
 
   let feedback: string | null = null;
   if (step.check === 'head' && posture) {
@@ -102,14 +109,22 @@ export default function RoutineRunner({ kind, who, posture, threshold, blinkTota
   return (
     <div className={compact ? 'space-y-3' : 'card space-y-5 p-5 sm:p-6'} aria-label={title}>
       <div className={compact ? 'flex items-center gap-3' : 'flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6'}>
-        <Image
-          src={clip(who, step.visual)}
-          alt={`Contoh gerakan: ${step.title}`}
-          width={360}
-          height={360}
-          unoptimized
-          className={`shrink-0 rounded-2xl bg-surface ${compact ? 'size-20' : 'mx-auto size-48 sm:mx-0 sm:size-44'}`}
-        />
+        {step.visual === 'kawung' ? (
+          <div className={`grid shrink-0 place-items-center rounded-2xl bg-surface text-accent ${compact ? 'size-20' : 'mx-auto size-48 sm:mx-0 sm:size-44'}`}>
+            <span className="size-4/5 transition-transform duration-100 ease-linear" style={{ transform: `scale(${breath})` }}>
+              <LogoMark className="size-full" />
+            </span>
+          </div>
+        ) : (
+          <Image
+            src={clip(who, step.visual)}
+            alt={`Contoh gerakan: ${step.title}`}
+            width={360}
+            height={360}
+            unoptimized
+            className={`shrink-0 rounded-2xl bg-surface ${compact ? 'size-20' : 'mx-auto size-48 sm:mx-0 sm:size-44'}`}
+          />
+        )}
         <div className="flex items-center gap-4 sm:gap-6">
           <ProgressRing value={t / total} size={compact ? 76 : 112}>
             <p className={`${compact ? 'text-base' : 'text-2xl'} leading-none font-bold tabular-nums`}>

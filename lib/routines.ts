@@ -1,14 +1,15 @@
 // Plain data so both server pages and client components can read it.
-// Breaks come due on a schedule; training is only ever started by hand.
+// Breaks come due on a schedule; training and the breathing pause are only ever started by hand.
 export type BreakKind = 'reset' | 'eye';
-export type RoutineKind = BreakKind | 'train';
+export type RoutineKind = BreakKind | 'train' | 'breath';
 
 /** Looping 3D clips of each move, rendered by assets/story/exercises.py into public/exercise/<figure>/<name>.webp. */
 export type Exercise = 'sit-tall' | 'chin-tuck' | 'squeeze' | 'work' | 'shoulder-roll' | 'neck-tilt' | 'look-far';
 
 export type Step = {
   title: string;
-  visual: Exercise;
+  /** 'kawung' is the breathing pacer: the logo grows on even cues and shrinks on odd ones. */
+  visual: Exercise | 'kawung';
   how: string;
   seconds: number;
   cues: string[];
@@ -89,6 +90,20 @@ export const ROUTINES: Record<RoutineKind, { title: string; short: string; steps
         seconds: 30,
         cues: ['Balik kerja, tetap tegak', 'Bagus, terus', 'Dikit lagi'],
         check: 'upright',
+      },
+    ],
+  },
+  breath: {
+    title: 'Jeda napas 1 menit',
+    short: 'Jeda napas',
+    steps: [
+      {
+        title: 'Napas pelan',
+        visual: 'kawung',
+        how: 'Tarik napas lewat hidung pas kawungnya membesar, buang pelan lewat mulut pas dia mengecil.',
+        // Five seconds in, five out: six breaths a minute, the slow pace used in paced-breathing studies.
+        seconds: 60,
+        cues: Array.from({ length: 12 }, (_, i) => (i % 2 ? 'Buang pelan-pelan' : 'Tarik napas')),
       },
     ],
   },
